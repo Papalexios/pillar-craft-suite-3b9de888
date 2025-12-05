@@ -176,7 +176,7 @@ const App = () => {
         // @ts-ignore
         maintenanceEngine.logCallback = (msg: string) => {
             console.log(msg);
-            if (msg.startsWith('✅ SUCCESS|')) {
+            if (msg.startsWith('✅ GOD MODE SUCCESS|') || msg.startsWith('✅ SUCCESS|')) {
                 const parts = msg.split('|');
                 if (parts.length >= 3) {
                     setOptimizedHistory(prev => [{ title: parts[1], url: parts[2], timestamp: new Date().toLocaleTimeString() }, ...prev]);
