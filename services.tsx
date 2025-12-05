@@ -775,9 +775,11 @@ export class MaintenanceEngine {
             this.logCallback(`✅ Schema injected`);
         }
 
-        // 4. TEXT ENHANCEMENT (Existing logic)
-        this.logCallback(`✍️ Enhancing text content...`);
+        // CHECK 6: Title & Meta Optimization
+        this.logCallback(`🎯 Checking title & meta optimization...`);
         let semanticKeywords: string[] = [];
+        let titleMetaUpdated = false;
+
         try {
             const keywordResponse = await memoizedCallAI(
                 apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel,
@@ -789,6 +791,100 @@ export class MaintenanceEngine {
             semanticKeywords = (parsed.semanticKeywords || []).map((k: any) => typeof k === 'object' ? k.keyword : k);
         } catch (e) {}
 
+        const title = page.title.toLowerCase();
+        const needsTitleOptimization = !title.includes('2026') ||
+            !['ultimate', 'complete', 'guide', 'best', 'top', 'proven'].some(w => title.includes(w));
+
+        if (needsTitleOptimization) {
+            this.logCallback(`🔧 Optimizing title & meta description...`);
+            try {
+                const titleMetaResponse = await memoizedCallAI(
+                    apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel,
+                    'optimize_title_meta',
+                    [page.title, body.innerHTML, semanticKeywords],
+                    'json'
+                );
+                const optimized = JSON.parse(titleMetaResponse);
+                // Store optimized title/meta for later use in publish
+                (page as any).optimizedTitle = optimized.title;
+                (page as any).optimizedMeta = optimized.metaDescription;
+                titleMetaUpdated = true;
+                structuralFixesMade++;
+                this.logCallback(`✅ Title & meta optimized: "${optimized.title}"`);
+            } catch (e: any) {
+                this.logCallback(`⚠️ Title/meta optimization failed: ${e.message}`);
+            }
+        }
+
+        // CHECK 7: Internal Linking
+        this.logCallback(`🔗 Checking internal linking...`);
+        const currentLinkCount = (body.innerHTML.match(/<a[^>]+href=[^>]*>/g) || []).length;
+
+        if (currentLinkCount < 3 && context.existingPages.length > 0) {
+            this.logCallback(`🔧 Insufficient internal links (${currentLinkCount}). Adding...`);
+            try {
+                const availablePagesString = context.existingPages
+                    .filter(p => p.slug && p.title && p.id !== page.id)
+                    .slice(0, 30)
+                    .map(p => `- ${p.title} (slug: ${p.slug})`)
+                    .join('\n');
+
+                const linksResponse = await memoizedCallAI(
+                    apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel,
+                    'generate_internal_links',
+                    [body.innerHTML, availablePagesString],
+                    'json'
+                );
+
+                const linkSuggestions = JSON.parse(linksResponse);
+
+                let linksAdded = 0;
+                for (const suggestion of linkSuggestions) {
+                    if (linksAdded >= 5) break; // Max 5 new links
+
+                    const targetPage = context.existingPages.find(p => p.slug === suggestion.targetSlug);
+                    if (targetPage && targetPage.id) {
+                        const regex = new RegExp(`(?![^<]*>)\\b${escapeRegExp(suggestion.anchorText)}\\b`, 'i');
+                        const textContent = body.innerHTML;
+
+                        if (regex.test(textContent) && !textContent.includes(`>${suggestion.anchorText}</a>`)) {
+                            body.innerHTML = body.innerHTML.replace(regex, `<a href="${targetPage.id}" class="internal-link-god-mode">${suggestion.anchorText}</a>`);
+                            linksAdded++;
+                        }
+                    }
+                }
+
+                if (linksAdded > 0) {
+                    structuralFixesMade++;
+                    this.logCallback(`✅ Added ${linksAdded} internal links`);
+                }
+            } catch (e: any) {
+                this.logCallback(`⚠️ Internal linking failed: ${e.message}`);
+            }
+        }
+
+        // 4. COMPREHENSIVE YEAR UPDATING - ALL OUTDATED YEARS TO 2026
+        this.logCallback(`📅 Scanning for ALL outdated years...`);
+        const outdatedYears = [2020, 2021, 2022, 2023, 2024, 2025];
+        let yearUpdatesCount = 0;
+
+        for (const year of outdatedYears) {
+            const yearRegex = new RegExp(`\\b${year}\\b`, 'g');
+            const matches = body.innerHTML.match(yearRegex);
+            if (matches) {
+                body.innerHTML = body.innerHTML.replace(yearRegex, '2026');
+                yearUpdatesCount += matches.length;
+            }
+        }
+
+        if (yearUpdatesCount > 0) {
+            structuralFixesMade++;
+            this.logCallback(`✅ Updated ${yearUpdatesCount} year mentions to 2026`);
+        }
+
+        // 5. ALEX HORMOZI STYLE TEXT ENHANCEMENT
+        this.logCallback(`✍️ Enhancing text with ALEX HORMOZI style (short, punchy, no fluff)...`);
+
         const textNodes = Array.from(body.querySelectorAll('p, li, h2, h3, h4'));
         const priorityNodes = textNodes.filter(node => {
             if (node.closest('figure, .wp-block-image, .wp-block-embed, .key-takeaways-box, .faq-section')) return false;
@@ -797,9 +893,12 @@ export class MaintenanceEngine {
 
             const text = node.textContent?.toLowerCase() || '';
             const priority =
-                text.includes('2023') || text.includes('2024') ? 10 :
-                node.tagName === 'H2' || node.tagName === 'H3' ? 8 :
-                text.length > 200 ? 6 : 3;
+                text.includes('2020') || text.includes('2021') || text.includes('2022') ||
+                text.includes('2023') || text.includes('2024') || text.includes('2025') ? 10 : // Any old year = highest priority
+                node.tagName === 'H2' || node.tagName === 'H3' ? 8 : // Headers = high value
+                text.length > 200 ? 7 : // Long paragraphs = good targets
+                text.split(' ').some(w => w.length > 15) ? 6 : // Contains long words (potentially fluff)
+                3; // Default priority
 
             return priority >= 5;
         });
@@ -848,79 +947,114 @@ export class MaintenanceEngine {
             await delay(500);
         }
 
-        // 5. PUBLISH DECISION
-        const totalChanges = structuralFixesMade + textChangesMade;
+        // 6. PUBLISH DECISION WITH OPTIMIZED METADATA
+        const totalChanges = structuralFixesMade + textChangesMade + yearUpdatesCount;
 
         if (totalChanges > 0) {
-            this.logCallback(`💾 Publishing: ${structuralFixesMade} structural fixes + ${textChangesMade} text enhancements`);
+            this.logCallback(`💾 Publishing: ${structuralFixesMade} structural fixes + ${textChangesMade} text enhancements + ${yearUpdatesCount} year updates`);
             const updatedHtml = body.innerHTML;
+
+            const generatedContent = normalizeGeneratedContent({}, page.title);
+            generatedContent.content = updatedHtml;
+            generatedContent.slug = page.slug;
+            generatedContent.isFullSurgicalRewrite = true;
+            generatedContent.surgicalSnippets = undefined;
+
+            // Apply optimized title & meta if available
+            if ((page as any).optimizedTitle) {
+                generatedContent.title = (page as any).optimizedTitle;
+                this.logCallback(`📝 Using optimized title: "${generatedContent.title}"`);
+            }
+            if ((page as any).optimizedMeta) {
+                generatedContent.metaDescription = (page as any).optimizedMeta;
+                this.logCallback(`📝 Using optimized meta: "${generatedContent.metaDescription.substring(0, 50)}..."`);
+            }
 
             const publishResult = await publishItemToWordPress(
                 {
-                    id: page.id, title: page.title, type: 'refresh', status: 'generating', statusText: 'Updating',
-                    generatedContent: {
-                        ...normalizeGeneratedContent({}, page.title),
-                        content: updatedHtml,
-                        slug: page.slug,
-                        isFullSurgicalRewrite: true,
-                        surgicalSnippets: undefined
-                    },
-                    crawledContent: null, originalUrl: page.id
+                    id: page.id,
+                    title: generatedContent.title,
+                    type: 'refresh',
+                    status: 'generating',
+                    statusText: 'Updating',
+                    generatedContent,
+                    crawledContent: null,
+                    originalUrl: page.id
                 },
                 localStorage.getItem('wpPassword') || '', 'publish', fetchWordPressWithRetry, wpConfig
             );
 
             if (publishResult.success) {
-                this.logCallback(`✅ SUCCESS|${page.title}|${publishResult.link || page.id}`);
+                this.logCallback(`✅ GOD MODE SUCCESS|${generatedContent.title}|${publishResult.link || page.id}`);
                 localStorage.setItem(`sota_last_proc_${page.id}`, Date.now().toString());
             } else {
                 this.logCallback(`❌ Publish failed: ${publishResult.message}`);
             }
         } else {
-            this.logCallback("✓ Content is already SOTA-optimized. No changes needed.");
+            this.logCallback("✓ Content is already at GOD-LEVEL optimization. Skipping.");
             localStorage.setItem(`sota_last_proc_${page.id}`, Date.now().toString());
         }
     }
 
-    // 🧠 INTELLIGENT UPDATE CHECKER - Determines if content actually needs updating
+    // 🧠 ULTIMATE INTELLIGENT UPDATE CHECKER - Comprehensive diagnostics
     private intelligentUpdateCheck(content: string, page: SitemapPage): { shouldUpdate: boolean, reason: string } {
         const text = content.toLowerCase();
         const currentYear = new Date().getFullYear();
+        const targetYear = 2026;
 
-        // Check 1: Contains very recent year mentions (probably fresh)
-        if (text.includes(String(currentYear)) || text.includes(String(currentYear + 1))) {
-            const yearMentions = (text.match(new RegExp(String(currentYear), 'g')) || []).length;
-            if (yearMentions >= 2) {
-                return { shouldUpdate: false, reason: `Already ${currentYear}-fresh (${yearMentions} mentions)` };
-            }
+        // Check 1: STRICT year check - must have 2026 mentions
+        if (!text.includes('2026')) {
+            return { shouldUpdate: true, reason: 'Missing 2026 freshness signals' };
         }
 
-        // Check 2: Has outdated year mentions (needs update)
-        const outdatedYears = [currentYear - 1, currentYear - 2, currentYear - 3];
+        // Check 2: Has ANY outdated year mentions (2020-2025)
+        const outdatedYears = [2020, 2021, 2022, 2023, 2024, 2025];
         for (const year of outdatedYears) {
             if (text.includes(String(year))) {
-                return { shouldUpdate: true, reason: `Contains outdated year ${year}` };
+                return { shouldUpdate: true, reason: `Contains outdated year ${year} - needs 2026 update` };
             }
         }
 
-        // Check 3: Content age priority
-        if (page.daysOld && page.daysOld > 180) {
-            return { shouldUpdate: true, reason: `Content is ${page.daysOld} days old` };
+        // Check 3: Missing critical structural elements
+        const hasKeyTakeaways = text.includes('key takeaway') || text.includes('at a glance');
+        const hasFAQ = text.includes('faq') || text.includes('frequently asked');
+        const hasConclusion = text.includes('conclusion') || text.includes('final thoughts');
+
+        if (!hasKeyTakeaways || !hasFAQ || !hasConclusion) {
+            return { shouldUpdate: true, reason: 'Missing critical sections (Key Takeaways/FAQ/Conclusion)' };
         }
 
-        // Check 4: Missing structured data
+        // Check 4: Internal linking deficiency
+        const internalLinkCount = (content.match(/<a[^>]+href=[^>]*>/g) || []).length;
+        if (internalLinkCount < 3) {
+            return { shouldUpdate: true, reason: `Insufficient internal links (${internalLinkCount}/3 minimum)` };
+        }
+
+        // Check 5: Missing structured data
         if (!content.includes('application/ld+json')) {
             return { shouldUpdate: true, reason: 'Missing schema markup' };
         }
 
-        // Check 5: Short content (probably thin)
+        // Check 6: Thin content
         const wordCount = content.split(/\s+/).length;
-        if (wordCount < 800) {
+        if (wordCount < 1000) {
             return { shouldUpdate: true, reason: `Thin content (${wordCount} words)` };
         }
 
+        // Check 7: Content age priority
+        if (page.daysOld && page.daysOld > 90) {
+            return { shouldUpdate: true, reason: `Content is ${page.daysOld} days old` };
+        }
+
+        // Check 8: Weak title detection (generic, no power words, no year)
+        const title = page.title.toLowerCase();
+        const hasPowerWords = ['ultimate', 'complete', 'guide', 'best', 'top', 'proven', '2026'].some(w => title.includes(w));
+        if (!hasPowerWords) {
+            return { shouldUpdate: true, reason: 'Weak title - needs optimization' };
+        }
+
         // Default: Skip if nothing triggers update
-        return { shouldUpdate: false, reason: 'Content appears current and optimized' };
+        return { shouldUpdate: false, reason: 'Content is SOTA-optimized' };
     }
 
     private async fetchRawContent(page: SitemapPage, wpConfig: WpConfig): Promise<string | null> {
