@@ -286,6 +286,94 @@ export class InternalLinkingEngine {
 
     return (totalOverlap / cluster.length) * 20;
   }
+
+  // SOTA UPGRADE: FUZZY CONTEXTUAL LINKING
+  findBestInternalLink(contentSegment: string, pages: SitemapPage[]): SitemapPage | null {
+    const words = contentSegment.toLowerCase().split(" ");
+    let bestMatch: SitemapPage | null = null;
+    let maxScore = 0;
+
+    for (const page of pages) {
+      // 1. Create a "Concept Signature" from the page title
+      const titleKeywords = page.title.toLowerCase().split(" ").filter(w => w.length > 4); // Filter trivial words
+
+      // 2. Check overlap with content segment
+      let score = 0;
+      titleKeywords.forEach(kw => {
+        if (contentSegment.toLowerCase().includes(kw)) score += 1;
+      });
+
+      // 3. Boost score if exact phrase match
+      if (contentSegment.toLowerCase().includes(page.title.toLowerCase())) score += 5;
+
+      if (score > maxScore && score >= 2) { // Minimum threshold
+        maxScore = score;
+        bestMatch = page;
+      }
+    }
+
+    return bestMatch;
+  }
+
+  // SOTA UPGRADE: SMART FUZZY LINK INJECTION
+  injectFuzzyContextualLinks(
+    content: string,
+    availablePages: SitemapPage[],
+    maxLinks: number = 12
+  ): string {
+    let modifiedContent = content;
+    const injectedSlugs = new Set<string>();
+    const paragraphs = content.split('</p>');
+
+    for (let i = 0; i < paragraphs.length && injectedSlugs.size < maxLinks; i++) {
+      const paragraph = paragraphs[i];
+
+      // Skip if already has a link
+      if (paragraph.includes('<a ')) continue;
+      if (paragraph.length < 100) continue;
+
+      const bestMatch = this.findBestInternalLink(paragraph, availablePages);
+
+      if (bestMatch && !injectedSlugs.has(bestMatch.slug)) {
+        // Find the best anchor text (longest matching phrase)
+        const titleWords = bestMatch.title.toLowerCase().split(' ');
+        let bestAnchor = '';
+        let bestAnchorLength = 0;
+
+        for (let len = titleWords.length; len >= 2; len--) {
+          for (let start = 0; start <= titleWords.length - len; start++) {
+            const phrase = titleWords.slice(start, start + len).join(' ');
+            if (paragraph.toLowerCase().includes(phrase) && phrase.length > bestAnchorLength) {
+              bestAnchor = phrase;
+              bestAnchorLength = phrase.length;
+            }
+          }
+        }
+
+        // Use full title if no phrase match
+        if (!bestAnchor) {
+          bestAnchor = bestMatch.title;
+        }
+
+        // Create regex to find first occurrence of anchor text
+        const regex = new RegExp(bestAnchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        const match = paragraph.match(regex);
+
+        if (match) {
+          paragraphs[i] = paragraph.replace(
+            regex,
+            `<a href="/${bestMatch.slug}" class="internal-link">${match[0]}</a>`
+          );
+          injectedSlugs.add(bestMatch.slug);
+        }
+      }
+    }
+
+    modifiedContent = paragraphs.join('</p>');
+    console.log(`[Fuzzy Internal Linking] Injected ${injectedSlugs.size} contextual links`);
+
+    return modifiedContent;
+  }
 }
 
 export const globalLinkingEngine = new InternalLinkingEngine();
