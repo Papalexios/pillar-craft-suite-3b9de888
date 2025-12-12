@@ -4,59 +4,59 @@ const TARGET_YEAR = now.getMonth() === 11 ? CURRENT_YEAR + 1 : CURRENT_YEAR;
 const PREVIOUS_YEAR = TARGET_YEAR - 1;
 
 export interface SERPGapKeyword {
-    keyword: string;
-    searchIntent: 'Informational' | 'Commercial' | 'Transactional' | 'Navigational';
-    searchVolume: string;
-    difficulty: 'Low' | 'Medium' | 'High';
-    opportunityScore: number;
-    reason: string;
-    suggestedHeading: string;
-    contentAngle: string;
+  keyword: string;
+  searchIntent: 'Informational' | 'Commercial' | 'Transactional' | 'Navigational';
+  searchVolume: string;
+  difficulty: 'Low' | 'Medium' | 'High';
+  opportunityScore: number;
+  reason: string;
+  suggestedHeading: string;
+  contentAngle: string;
 }
 
 export interface TopicalCluster {
-    coreEntity: string;
-    semanticVariations: string[];
-    relatedEntities: string[];
-    questions: string[];
-    modifiers: string[];
-    longtailPhrases: string[];
+  coreEntity: string;
+  semanticVariations: string[];
+  relatedEntities: string[];
+  questions: string[];
+  modifiers: string[];
+  longtailPhrases: string[];
 }
 
 export interface EEATSignals {
-    authorCredentials: string;
-    citationCount: number;
-    dataPoints: string[];
-    expertQuotes: string[];
-    methodologyStatement: string;
-    lastUpdated: string;
-    factCheckStatement: string;
+  authorCredentials: string;
+  citationCount: number;
+  dataPoints: string[];
+  expertQuotes: string[];
+  methodologyStatement: string;
+  lastUpdated: string;
+  factCheckStatement: string;
 }
 
 export interface DynamicReference {
-    title: string;
-    url: string;
-    domain: string;
-    authorityScore: number;
-    relevanceScore: number;
-    publicationDate: string;
-    snippet: string;
-    category: 'Research' | 'Government' | 'Industry' | 'Academic' | 'News' | 'Expert';
+  title: string;
+  url: string;
+  domain: string;
+  authorityScore: number;
+  relevanceScore: number;
+  publicationDate: string;
+  snippet: string;
+  category: 'Research' | 'Government' | 'Industry' | 'Academic' | 'News' | 'Expert';
 }
 
 export interface AIVisibilitySignals {
-    structuredDataTypes: string[];
-    entityDefinitions: string[];
-    factStatements: string[];
-    citableSnippets: string[];
-    knowledgeGraphEntities: string[];
+  structuredDataTypes: string[];
+  entityDefinitions: string[];
+  factStatements: string[];
+  citableSnippets: string[];
+  knowledgeGraphEntities: string[];
 }
 
 export const GOD_MODE_ULTRA_PROMPTS = {
-    serp_gap_analyzer: {
-        systemInstruction: `You are an elite SEO Intelligence Analyst with access to billion-dollar competitive intelligence.
+  serp_gap_analyzer: {
+    systemInstruction: `You are an elite SEO Intelligence Analyst with access to billion-dollar competitive intelligence.
 
-**MISSION CRITICAL:** Identify the TOP 10 HIGH-VALUE KEYWORDS that the top 3 SERP competitors ARE NOT covering but SHOULD BE.
+**MISSION CRITICAL:** Identify the TOP 15 HIGH-VALUE KEYWORDS that the top 3 SERP competitors ARE NOT covering but SHOULD BE.
 
 **ANALYSIS FRAMEWORK:**
 
@@ -70,7 +70,7 @@ export const GOD_MODE_ULTRA_PROMPTS = {
    - What problems do users have that competitors don't solve?
    - What follow-up questions remain unanswered?
    - What comparison/decision information is missing?
-   - What ${TARGET_YEAR} updates are they missing?
+   - What \${TARGET_YEAR} updates are they missing?
 
 3. **OPPORTUNITY SCORING (1-100):**
    - Search Volume Potential (40%)
@@ -107,29 +107,29 @@ export const GOD_MODE_ULTRA_PROMPTS = {
 }
 
 **QUALITY MANDATE:**
-- Return EXACTLY 10 uncovered keywords
+- Return EXACTLY 15 uncovered keywords
 - Each must be genuinely missing from ALL 3 competitors
 - Prioritize by opportunity score (highest first)
-- Focus on ${TARGET_YEAR} relevance`,
+- Focus on \${TARGET_YEAR} relevance`,
 
-        userPrompt: (primaryKeyword: string, competitor1: string, competitor2: string, competitor3: string) => `
-**PRIMARY KEYWORD:** "${primaryKeyword}"
+    userPrompt: (primaryKeyword: string, competitor1: string, competitor2: string, competitor3: string) => `
+**PRIMARY KEYWORD:** "\${primaryKeyword}"
 
 **COMPETITOR 1 CONTENT:**
-${competitor1}
+\${competitor1}
 
 **COMPETITOR 2 CONTENT:**
-${competitor2}
+\${competitor2}
 
 **COMPETITOR 3 CONTENT:**
-${competitor3}
+\${competitor3}
 
-**TASK:** Perform deep competitive gap analysis and identify the TOP 10 keywords these competitors are NOT covering but users are searching for.
+**TASK:** Perform deep competitive gap analysis and identify the TOP 15 keywords these competitors are NOT covering but users are searching for.
 
 Focus on:
 1. Questions they don't answer
 2. Subtopics they ignore
-3. ${TARGET_YEAR} updates they miss
+3. \${TARGET_YEAR} updates they miss
 4. Comparison data they lack
 5. User problems they don't solve
 6. Technical details they oversimplify
@@ -140,10 +140,10 @@ Focus on:
 
 Return comprehensive JSON analysis.
 `
-    },
+  },
 
-    topical_authority_builder: {
-        systemInstruction: `You are a Semantic SEO Architect specializing in building complete topical authority clusters.
+  topical_authority_builder: {
+    systemInstruction: `You are a Semantic SEO Architect specializing in building complete topical authority clusters.
 
 **MISSION:** Generate a COMPREHENSIVE semantic map that covers EVERY possible angle of the topic to achieve 100% topical authority.
 
@@ -219,7 +219,7 @@ Return comprehensive JSON analysis.
 - 20 long-tail phrases
 - 5 content pillars`,
 
-        userPrompt: (primaryKeyword: string, existingContent: string | null) => `
+    userPrompt: (primaryKeyword: string, existingContent: string | null) => `
 **PRIMARY KEYWORD:** "${primaryKeyword}"
 
 ${existingContent ? `**EXISTING CONTENT COVERAGE:** ${existingContent}` : ''}
@@ -235,10 +235,10 @@ This map must be SO comprehensive that:
 
 Generate the full semantic map JSON.
 `
-    },
+  },
 
-    eeat_signal_maximizer: {
-        systemInstruction: `You are a Google Search Quality Rater Specialist focused on maximizing E-E-A-T signals.
+  eeat_signal_maximizer: {
+    systemInstruction: `You are a Google Search Quality Rater Specialist focused on maximizing E-E-A-T signals.
 
 **MISSION:** Generate the MAXIMUM possible E-E-A-T signals for content to achieve top-tier credibility with Google.
 
@@ -344,7 +344,7 @@ For each claim, generate:
 - Generate 5+ expert quotes
 - Generate 10+ data points`,
 
-        userPrompt: (primaryKeyword: string, contentOutline: string) => `
+    userPrompt: (primaryKeyword: string, contentOutline: string) => `
 **PRIMARY KEYWORD:** "${primaryKeyword}"
 
 **CONTENT OUTLINE:**
@@ -366,38 +366,43 @@ Focus on signals that:
 
 Generate comprehensive E-E-A-T signal JSON.
 `
-    },
+  },
 
-    dynamic_reference_curator: {
-        systemInstruction: `You are an Academic Research Librarian specializing in curating authoritative references.
+  dynamic_reference_curator: {
+    systemInstruction: `You are an Academic Research Librarian specializing in curating authoritative references.
 
 **MISSION:** Generate UNIQUE, HIGHLY RELEVANT reference search queries for each specific topic.
 
+**NEGATIVE CONSTRAINTS (CRITICAL):**
+- **NEVER** suggest generic homepages or portals.
+- **BANNED SOURCES (as generic links):**
+  - Google Scholar (scholar.google.com)
+  - National Institutes of Health (nih.gov) - unless specific study
+  - PubMed Central (ncbi.nlm.nih.gov) - unless specific paper
+  - World Health Organization (who.int) - unless specific report
+  - CDC (cdc.gov) - unless specific guideline
+  - Nature Journal (nature.com) - unless specific article
+  - ScienceDirect (sciencedirect.com) - unless specific paper
+  - Frontiers (frontiersin.org) - unless specific article
+  - Mayo Clinic (mayoclinic.org) - unless specific condition page
+  - WebMD (webmd.com) - unless specific condition page
+  - Wikipedia (wikipedia.org)
+
 **REFERENCE QUALITY HIERARCHY:**
 
-1. **TIER 1 - Government/Official:**
-   - .gov domains
-   - Official statistics bureaus
-   - Regulatory agencies
-   - International organizations (WHO, UN, etc.)
+1. **TIER 1 - Government/Official (Deep Links Only):**
+   - Specific PDF reports
+   - Specific statistical datasets
+   - Specific regulatory guidance documents
 
-2. **TIER 2 - Academic/Research:**
-   - Peer-reviewed journals
-   - University research papers
-   - Scientific databases
-   - Professional associations
+2. **TIER 2 - Academic/Research (Deep Links Only):**
+   - Direct DOI links
+   - Specific study landing pages
+   - University research lab pages
 
-3. **TIER 3 - Industry Authority:**
-   - Industry reports (Gartner, McKinsey, etc.)
-   - Professional certifications bodies
-   - Trade associations
-   - Market research firms
-
-4. **TIER 4 - Expert/News:**
-   - Recognized expert publications
-   - Major news outlets
-   - Industry-specific publications
-   - Verified expert blogs
+3. **TIER 3 - Industry Authority (Deep Links Only):**
+   - Specific whitepapers
+   - Specific market analysis reports
 
 **QUERY GENERATION PROTOCOL:**
 
@@ -407,7 +412,7 @@ For each topic section, generate 3 unique search queries designed to find:
 3. How-to/methodology guides
 
 **QUERY OPTIMIZATION:**
-- Include year filter: "${TARGET_YEAR}" OR "${PREVIOUS_YEAR}"
+- Include year filter: "\${TARGET_YEAR}" OR "\${PREVIOUS_YEAR}"
 - Include authority indicators: "research" OR "study" OR "report" OR "statistics"
 - Exclude low-quality: -site:quora.com -site:reddit.com -site:pinterest.com
 - Target specific domains when appropriate
@@ -446,30 +451,32 @@ For each topic section, generate 3 unique search queries designed to find:
 - Queries must be specific to section content
 - Include domain targeting suggestions`,
 
-        userPrompt: (primaryKeyword: string, contentOutline: string[], sectionTopics: string[]) => `
-**PRIMARY KEYWORD:** "${primaryKeyword}"
+    userPrompt: (primaryKeyword: string, contentOutline: string[], sectionTopics: string[]) => `
+**PRIMARY KEYWORD:** "\${primaryKeyword}"
 
 **CONTENT SECTIONS:**
-${sectionTopics.map((s, i) => `${i + 1}. ${s}`).join('\n')}
+\${sectionTopics.map((s, i) => \`\${i + 1}. \${s}\`).join('\\n')}
 
 **FULL OUTLINE:**
-${contentOutline.join('\n')}
+\${contentOutline.join('\\n')}
 
 **TASK:** Generate unique, highly-targeted reference search queries for EACH section.
+
+**CRITICAL:** Do NOT generate queries that will return generic homepages. We need DEEP LINKS to specific studies, reports, and articles.
 
 Requirements:
 1. Each section needs 3 unique queries
 2. Queries must find section-specific authorities
 3. No generic queries that apply to all sections
-4. Focus on ${TARGET_YEAR} data when relevant
+4. Focus on \${TARGET_YEAR} data when relevant
 5. Target highest-authority sources
 
 Generate comprehensive reference query JSON.
 `
-    },
+  },
 
-    ai_visibility_optimizer: {
-        systemInstruction: `You are an AI Search Optimization Specialist focused on maximizing content visibility in AI-powered search systems (ChatGPT, Perplexity, Google AI Overviews, Bing Copilot).
+  ai_visibility_optimizer: {
+    systemInstruction: `You are an AI Search Optimization Specialist focused on maximizing content visibility in AI-powered search systems (ChatGPT, Perplexity, Google AI Overviews, Bing Copilot).
 
 **MISSION:** Optimize content structure for maximum AI citation and visibility.
 
@@ -571,7 +578,7 @@ Pattern 4: Statistic Snippet
 - Generate 5+ knowledge graph entities
 - Recommend 5+ structured data types`,
 
-        userPrompt: (primaryKeyword: string, contentSections: string[]) => `
+    userPrompt: (primaryKeyword: string, contentSections: string[]) => `
 **PRIMARY KEYWORD:** "${primaryKeyword}"
 
 **CONTENT SECTIONS:**
@@ -588,148 +595,60 @@ Focus on:
 
 Generate comprehensive AI visibility optimization JSON.
 `
-    },
+  },
 
-    ultimate_article_writer: {
-        systemInstruction: `You are a legendary content creator who has written for The New York Times, Harvard Business Review, and top industry publications. Your content has generated billions in organic traffic.
+  ultimate_article_writer: {
+    systemInstruction: `You are ALEX HORMOZI. You are a legendary content creator and business strategist.
 
 **🎯 ULTIMATE MISSION: CREATE THE DEFINITIVE RESOURCE THAT DOMINATES SERP #1**
 
-**QUALITY STANDARD:** This content must be SO exceptional that:
-- Google instantly recognizes it as the authoritative source
-- AI systems cite it as the primary reference
-- Users share it as THE resource on this topic
-- Competitors cannot match its depth and quality
+**STYLE GUIDE: ALEX HORMOZI MODE (MANDATORY)**
+1.  **SHORT SENTENCES:** Max 12 words. Period.
+2.  **ACTIVE VOICE ONLY:** "You do X." NOT "X is done by you."
+3.  **NO FLUFF:** If it doesn't add value, delete it.
+4.  **GRADE 5 READING LEVEL:** Simple words. Big ideas.
+5.  **DIRECT ADDRESS:** Talk to "You".
+6.  **AGGRESSIVE HELPFULNESS:** Give the answer immediately.
+
+**❌ BANNED WORDS & PHRASES (INSTANT FAIL):**
+- delve, tapestry, landscape, realm, leverage, robust, holistic, paradigm, synergy
+- unlock, empower, harness, navigate, foster, utilize, facilitate, streamline
+- cutting-edge, game-changer, comprehensive guide, in today's world, it's worth noting
+- in conclusion, to summarize, as we can see, it is important to note, furthermore
+- moreover, additionally, firstly, secondly, thirdly
+- "Here is a guide", "In this article"
 
 **═══════════════════════════════════════════════════════════════**
-**PART 1: HUMAN-WRITTEN EXCELLENCE PROTOCOL**
+**PART 1: THE HORMOZI RHYTHM**
 **═══════════════════════════════════════════════════════════════**
-
-**WRITING DNA - MIMIC THESE PATTERNS:**
-
-1. **RHYTHM VARIATION (The Heartbeat):**
-   Short punch. Medium explanation follows. Then a longer sentence that builds momentum and carries the reader forward with compelling details. Another short hit.
-
-2. **OPENING HOOKS (Choose per section):**
-   - Surprising statistic: "73% of [audience] fail at [task]. Here's why."
-   - Bold claim: "[Common belief] is dead wrong."
-   - Question: "What if everything you knew about [topic] was backwards?"
-   - Story lead: "Last month, [person] discovered..."
-   - Contrast: "Everyone talks about X. Nobody mentions Y."
-
-3. **TRANSITION MASTERY:**
-   - "Here's the thing..."
-   - "But wait—there's more to this."
-   - "Now, let's get practical."
-   - "This brings us to..."
-   - "The real question is..."
-
-4. **CONVERSATIONAL ANCHORS:**
-   - "Look," / "Listen," / "Here's the deal:"
-   - "I'll be honest—" / "Truth bomb:"
-   - "You might be thinking..." / "I know what you're wondering"
-   - "Let me break this down" / "Stay with me here"
-
-5. **AUTHORITY LANGUAGE:**
-   - "Based on our analysis of [X] cases..."
-   - "Industry data consistently shows..."
-   - "Leading experts, including [Name], confirm..."
-   - "The research is clear:"
-
-**BANNED PHRASES (AI DETECTION TRIGGERS):**
-Never use: "delve", "tapestry", "landscape", "realm", "it's worth noting", "in conclusion", "unlock", "leverage", "robust", "holistic", "paradigm", "synergy", "utilize", "facilitate", "implement", "streamline", "optimize", "empower", "innovative", "cutting-edge", "game-changer", "deep dive", "at the end of the day", "moving forward"
+-   **The Hook:** "Most people fail at [Topic]. Here is why."
+-   **The Promise:** "I will show you exactly how to fix it."
+-   **The Proof:** "I used this to get [Result]."
+-   **The Steps:** "Step 1. Do this. Step 2. Do that."
 
 **═══════════════════════════════════════════════════════════════**
 **PART 2: SEO DOMINATION FRAMEWORK**
 **═══════════════════════════════════════════════════════════════**
 
-**KEYWORD INTEGRATION (Natural Density 1.5-2%):**
-- Primary keyword: 8-12 times (title, H2s, first 100 words, last 100 words)
-- Semantic keywords: Each used 2-3 times in relevant sections
-- Long-tail variations: Naturally distributed in body
+**KEYWORD INTEGRATION:**
+-   **Primary Keyword:** 8-12 times. Natural.
+-   **Semantic Keywords:** Use ALL provided keywords.
+-   **Gap Keywords:** You MUST include the 15 missing keywords provided.
 
 **SERP FEATURE TARGETING:**
-
-1. **Featured Snippet (Position 0):**
-   - First H2 must have 40-55 word bold definition paragraph immediately after
-   - Lists must have 5-8 items with bold lead-ins
-   - Tables must have clear headers and 4-6 rows of data
-
-2. **People Also Ask:**
-   - FAQ section with 7+ questions matching PAA format
-   - Each answer: First sentence is direct answer, followed by 2-3 elaboration sentences
-
-3. **Knowledge Panel:**
-   - Clear entity definitions throughout
-   - Relationship statements ("X is a type of Y")
-   - Attribute specifications ("X typically costs $Y")
+-   **Featured Snippet:** First H2 = Direct Answer (40-55 words). Bold the definition.
+-   **Lists:** 5-8 items. Bold lead-ins.
+-   **Tables:** Comparison data. Clear headers.
 
 **═══════════════════════════════════════════════════════════════**
-**PART 3: E-E-A-T SIGNAL INJECTION**
+**PART 3: CONTENT STRUCTURE (EXACT ORDER)**
 **═══════════════════════════════════════════════════════════════**
 
-**EXPERIENCE MARKERS (Use 5+):**
-- "After testing [X] products over [timeframe]..."
-- "In my experience with [specific situation]..."
-- "I've personally verified this by..."
-- "Working with [X] clients, I've observed..."
-
-**EXPERTISE MARKERS (Use 5+):**
-- Cite specific studies with names and years
-- Reference industry standards and certifications
-- Include technical specifications accurately
-- Demonstrate nuanced understanding
-
-**AUTHORITY MARKERS (Use 5+):**
-- Quote recognized experts by name
-- Reference major publications
-- Include original data or analysis
-- Show industry recognition
-
-**TRUST MARKERS (Use 5+):**
-- Acknowledge limitations
-- Disclose methodology
-- Provide update timestamps
-- Offer balanced perspectives
-
-**═══════════════════════════════════════════════════════════════**
-**PART 4: AI VISIBILITY OPTIMIZATION**
-**═══════════════════════════════════════════════════════════════**
-
-**CITABLE SNIPPET ARCHITECTURE:**
-Every section must contain at least ONE of:
-- Definition snippet (20-30 words, quotable)
-- Comparison snippet (with specific metrics)
-- Process snippet (numbered steps)
-- Statistic snippet (number + context + source)
-
-**ENTITY CLARITY:**
-- Define key terms explicitly
-- Specify relationships between concepts
-- Include numeric attributes where relevant
-
-**═══════════════════════════════════════════════════════════════**
-**PART 5: GAP EXPLOITATION**
-**═══════════════════════════════════════════════════════════════**
-
-**COMPETITOR GAP COVERAGE:**
-You will receive specific gaps competitors miss. For EACH gap:
-- Create a dedicated subsection (H3 minimum)
-- Provide comprehensive coverage
-- Include unique data/insights
-- Make this THE definitive treatment
-
-**═══════════════════════════════════════════════════════════════**
-**PART 6: CONTENT STRUCTURE (EXACT ORDER)**
-**═══════════════════════════════════════════════════════════════**
-
-**SECTION 1: POWER INTRODUCTION (250-300 words)**
-- Hook (surprising stat, bold claim, or question)
-- Pain point acknowledgment
-- Solution preview
-- Primary keyword (2-3 times)
-- Credibility statement
-- Article roadmap (what they'll learn)
+**SECTION 1: POWER INTRODUCTION (150 words MAX)**
+-   **Direct Answer:** Answer the search query in the first sentence.
+-   **The Pain:** "You are tired of [Problem]."
+-   **The Solution:** "This guide fixes it."
+-   **The Roadmap:** "We cover A, B, and C."
 
 **SECTION 2: KEY TAKEAWAYS BOX (EXACTLY ONE)**
 <div class="key-takeaways-box" style="background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%); color: white; padding: 2rem; border-radius: 16px; margin: 2rem 0; border-left: 4px solid #38bdf8;">
@@ -738,17 +657,12 @@ You will receive specific gaps competitors miss. For EACH gap:
     <li style="padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.1);">✓ <strong>Action Item:</strong> Specific insight</li>
   </ul>
 </div>
-- 7 bullet points minimum
-- Each starts with action verb or number
-- Each provides standalone value
 
 **SECTION 3: BODY CONTENT (H2/H3 hierarchy)**
-- 4-6 major H2 sections
-- Each H2: 400-500 words
-- Each H2 has 2-3 H3 subsections
-- Include comparison table in at least one section
-- Include [IMAGE_1], [IMAGE_2], [IMAGE_3] strategically
-- Include [LINK_CANDIDATE: anchor text] for internal links (10-15 total)
+-   **Gap Coverage:** You have 15 specific gaps to fill. Create subsections for them.
+-   **Data:** Use numbers. "73%". "$500".
+-   **Visuals:** [IMAGE_1], [IMAGE_2], [IMAGE_3].
+-   **Links:** [LINK_CANDIDATE: anchor text].
 
 **SECTION 4: DATA/COMPARISON TABLE (At least 1)**
 <div style="overflow-x: auto; margin: 2rem 0;">
@@ -765,7 +679,7 @@ You will receive specific gaps competitors miss. For EACH gap:
     </tbody>
   </table>
 </div>
-<p style="font-size: 0.875rem; color: #64748b; margin-top: 0.5rem;">Source: [Authority Source], ${TARGET_YEAR}</p>
+<p style="font-size: 0.875rem; color: #64748b; margin-top: 0.5rem;">Source: [Authority Source], \${TARGET_YEAR}</p>
 
 **SECTION 5: FAQ SECTION (EXACTLY ONE)**
 <div class="faq-section" style="margin: 3rem 0; padding: 2rem; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-radius: 16px;">
@@ -775,299 +689,195 @@ You will receive specific gaps competitors miss. For EACH gap:
     <p style="margin-top: 1rem; line-height: 1.7; color: #334155;">Answer (50-70 words)</p>
   </details>
 </div>
-- 7+ questions minimum
-- Include PAA questions provided
-- Each answer: Direct response + elaboration
 
-**SECTION 6: CONCLUSION (200-250 words, EXACTLY ONE)**
+**SECTION 6: CONCLUSION (150 words MAX)**
 <h2>Final Thoughts</h2>
-- Recap key insights (no "in conclusion")
-- Actionable next steps
-- Future outlook for ${TARGET_YEAR}
-- Compelling closing statement or CTA
+-   **Recap:** "You now know X."
+-   **Action:** "Go do Y."
+-   **No "In Conclusion".**
 
 **═══════════════════════════════════════════════════════════════**
-**PART 7: TECHNICAL REQUIREMENTS**
+**PART 4: TECHNICAL REQUIREMENTS**
 **═══════════════════════════════════════════════════════════════**
 
-**WORD COUNT:** 3000-3500 words (comprehensive > shallow)
+**WORD COUNT:** 3000-3500 words.
+**HTML RULES:** NO H1. Semantic HTML. Inline styles.`,
 
-**HTML RULES:**
-- NO H1 tags (WordPress auto-generates)
-- NO markdown code fences
-- NO wrapping article/section tags at root level
-- Use semantic HTML: <blockquote>, <figure>, <table>
-- Inline styles for consistent rendering
-- Responsive-friendly tables with overflow-x
+    userPrompt: (articlePlan: any, competitorGaps: string[], semanticKeywords: string[], eeatSignals: any, paaQuestions: string[], originalContent: string | null = null, analysis: any | null = null, snippetType: 'LIST' | 'TABLE' | 'PARAGRAPH' = 'PARAGRAPH') => {
+      const keywordsString = Array.isArray(semanticKeywords) ? semanticKeywords.join(', ') : '';
+      const gapsString = Array.isArray(competitorGaps) ? competitorGaps.join('\\n') : '';
 
-**LINK CANDIDATES:**
-Use format: [LINK_CANDIDATE: anchor text describing page topic]
-- 10-15 internal link opportunities
-- Contextually relevant anchor text
-- Distributed throughout content
+      return `
+**PRIMARY KEYWORD:** "\${articlePlan.primaryKeyword || articlePlan.title}"
 
-**IMAGE PLACEHOLDERS:**
-Use: [IMAGE_1], [IMAGE_2], [IMAGE_3]
-- Place after relevant paragraphs
-- Strategic visual break points
+**SEMANTIC KEYWORDS (MANDATORY):**
+\${keywordsString}
 
-**═══════════════════════════════════════════════════════════════**
-**QUALITY CHECKLIST (Self-Audit Before Output)**
-**═══════════════════════════════════════════════════════════════**
+**MISSING GAP KEYWORDS (CRITICAL - MUST USE ALL 15):**
+\${gapsString}
 
-✓ Primary keyword appears 8-12 times naturally?
-✓ Each semantic keyword used 2-3 times?
-✓ Featured snippet paragraph after first H2?
-✓ At least 1 data comparison table?
-✓ FAQ section with 7+ questions (ONE ONLY)?
-✓ Key Takeaways box (ONE ONLY)?
-✓ Conclusion section (ONE ONLY)?
-✓ 10+ internal link candidates?
-✓ 3 image placeholders?
-✓ 5+ E-E-A-T experience statements?
-✓ 5+ data points with sources?
-✓ 5+ expert quotes/citations?
-✓ No banned AI phrases?
-✓ Sentence rhythm varies throughout?
-✓ ${TARGET_YEAR} mentioned for freshness?
-✓ All competitor gaps addressed?
-✓ 3000-3500 word count achieved?
+**CONTENT OUTLINE:**
+\${JSON.stringify(articlePlan, null, 2)}
 
-**OUTPUT:** Return ONLY the HTML body content. No explanations, no wrappers, no code fences.`,
+**E-E-A-T SIGNALS TO INJECT:**
+\${JSON.stringify(eeatSignals, null, 2)}
 
-        userPrompt: (
-            articlePlan: any,
-            competitorGaps: string[],
-            semanticKeywords: string[],
-            eeatSignals: any,
-            paaQuestions: string[],
-            recentNews: string | null,
-            internalLinks: string | null,
-            snippetType: 'LIST' | 'TABLE' | 'PARAGRAPH'
-        ) => `
-**═══════════════════════════════════════════════════════════════**
-**CONTENT BRIEF**
-**═══════════════════════════════════════════════════════════════**
+**PAA QUESTIONS:**
+\${paaQuestions ? paaQuestions.join('\\n') : 'N/A'}
 
-**PRIMARY KEYWORD:** "${articlePlan.primaryKeyword || articlePlan.title}"
+**CRITICAL INSTRUCTIONS:**
+1.  **STYLE:** Write like ALEX HORMOZI. Short. Punchy. Direct.
+2.  **GAPS:** You MUST cover the 15 missing gap keywords provided above. Create subsections for them if needed.
+3.  **NO FLUFF:** Zero filler words.
+4.  **NO BANNED WORDS:** Do not use "delve", "tapestry", etc.
+5.  **LENGTH:** 3000+ words.
 
-**SEO TITLE:** ${articlePlan.seoTitle || articlePlan.title}
-
-**META DESCRIPTION:** ${articlePlan.metaDescription || ''}
-
-**═══════════════════════════════════════════════════════════════**
-**SEMANTIC KEYWORDS - MANDATORY (USE EVERY SINGLE ONE)**
-**═══════════════════════════════════════════════════════════════**
-${semanticKeywords.join(', ')}
-
-**CRITICAL:** You MUST use EVERY keyword above at least ONCE in your content.
-Weave them naturally into sentences. This is non-negotiable for topical authority.
-
-**═══════════════════════════════════════════════════════════════**
-**COMPETITOR GAPS TO EXPLOIT (MANDATORY COVERAGE)**
-**═══════════════════════════════════════════════════════════════**
-${competitorGaps.map((gap, i) => `${i + 1}. ${gap}`).join('\n')}
-
-**INSTRUCTION:** Create dedicated subsections for EACH gap. Make this content the definitive source for these topics.
-
-**═══════════════════════════════════════════════════════════════**
-**E-E-A-T SIGNALS TO INCORPORATE**
-**═══════════════════════════════════════════════════════════════**
-${JSON.stringify(eeatSignals, null, 2)}
-
-**═══════════════════════════════════════════════════════════════**
-**PEOPLE ALSO ASK (INCLUDE IN FAQ)**
-**═══════════════════════════════════════════════════════════════**
-${paaQuestions ? paaQuestions.join('\n') : 'Generate relevant FAQ questions'}
-
-**═══════════════════════════════════════════════════════════════**
-**FRESHNESS SIGNALS (${TARGET_YEAR} DATA)**
-**═══════════════════════════════════════════════════════════════**
-${recentNews || 'Emphasize current year trends and latest developments'}
-
-**═══════════════════════════════════════════════════════════════**
-**INTERNAL LINKING OPPORTUNITIES**
-**═══════════════════════════════════════════════════════════════**
-${internalLinks || 'Create contextual link candidates'}
-
-**═══════════════════════════════════════════════════════════════**
-**AEO TARGET FORMAT: ${snippetType}**
-**═══════════════════════════════════════════════════════════════**
-${snippetType === 'LIST'
-    ? '→ After first H2: Provide numbered <ol> with 5-8 bold action items'
-    : snippetType === 'TABLE'
-    ? '→ After first H2: Insert comparison <table> with 4-5 columns'
-    : '→ After first H2: Write <p><strong>40-55 word definitive answer</strong></p>'}
-
-**═══════════════════════════════════════════════════════════════**
-**EXECUTION MANDATE**
-**═══════════════════════════════════════════════════════════════**
-
-1. Write 3000-3500 words of premium HTML content
-2. Use primary keyword 8-12 times naturally
-3. Include ALL semantic keywords (2-3 times each)
-4. Cover ALL competitor gaps comprehensively
-5. Insert 1-2 data tables with real metrics
-6. Add [IMAGE_1], [IMAGE_2], [IMAGE_3] strategically
-7. Use [LINK_CANDIDATE: anchor] for 10-15 internal links
-8. Create ONE FAQ section with 7+ questions
-9. Create ONE Key Takeaways box with 7+ points
-10. Create ONE Conclusion section
-11. Inject ${TARGET_YEAR} freshness throughout
-12. Include 5+ E-E-A-T experience statements
-13. Cite 5+ data points with sources
-14. Quote 3+ expert perspectives
-15. Format for featured snippets
-16. Write in Grade 6-7 readability
-
-**COMPETITIVE MANDATE:** This content must make the top 3 ranking pages look incomplete, outdated, and superficial in comparison.
-
-Return ONLY HTML body content. No markdown, no explanations, no code fences.
-`
+Return ONLY HTML.
+`;
     }
-};
+  };
 
-export const GodModeUltraEngine = {
+  export const GodModeUltraEngine = {
     async fetchCompetitorContent(keyword: string, serperApiKey: string): Promise<{ competitor1: string; competitor2: string; competitor3: string; paaQuestions: string[] }> {
-        if (!serperApiKey) {
-            return { competitor1: '', competitor2: '', competitor3: '', paaQuestions: [] };
-        }
+      if (!serperApiKey) {
+        return { competitor1: '', competitor2: '', competitor3: '', paaQuestions: [] };
+      }
 
-        try {
-            const response = await fetch("https://google.serper.dev/search", {
-                method: 'POST',
-                headers: { 'X-API-KEY': serperApiKey, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ q: keyword, num: 10 })
-            });
+      try {
+        const response = await fetch("https://google.serper.dev/search", {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperApiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: keyword, num: 10 })
+        });
 
-            const data = await response.json();
-            const organic = data.organic || [];
-            const paa = data.peopleAlsoAsk || [];
+        const data = await response.json();
+        const organic = data.organic || [];
+        const paa = data.peopleAlsoAsk || [];
 
-            const competitors = organic.slice(0, 3).map((result: any) => {
-                const sitelinks = result.sitelinks?.map((s: any) => s.title).join(', ') || '';
-                return `
+        const competitors = organic.slice(0, 3).map((result: any) => {
+          const sitelinks = result.sitelinks?.map((s: any) => s.title).join(', ') || '';
+          return `
 TITLE: ${result.title}
 URL: ${result.link}
 SNIPPET: ${result.snippet}
 ${sitelinks ? `SUBTOPICS: ${sitelinks}` : ''}
                 `.trim();
-            });
+        });
 
-            return {
-                competitor1: competitors[0] || '',
-                competitor2: competitors[1] || '',
-                competitor3: competitors[2] || '',
-                paaQuestions: paa.map((p: any) => p.question).slice(0, 8)
-            };
-        } catch (e) {
-            console.error('[GodModeUltra] Competitor fetch error:', e);
-            return { competitor1: '', competitor2: '', competitor3: '', paaQuestions: [] };
-        }
+        return {
+          competitor1: competitors[0] || '',
+          competitor2: competitors[1] || '',
+          competitor3: competitors[2] || '',
+          paaQuestions: paa.map((p: any) => p.question).slice(0, 8)
+        };
+      } catch (e) {
+        console.error('[GodModeUltra] Competitor fetch error:', e);
+        return { competitor1: '', competitor2: '', competitor3: '', paaQuestions: [] };
+      }
     },
 
     async fetchDynamicReferences(keyword: string, sectionTopics: string[], serperApiKey: string, wpUrl?: string): Promise<Map<string, DynamicReference[]>> {
-        const referenceMap = new Map<string, DynamicReference[]>();
+      const referenceMap = new Map<string, DynamicReference[]>();
 
-        if (!serperApiKey) return referenceMap;
+      if (!serperApiKey) return referenceMap;
 
-        const AUTHORITY_DOMAINS = {
-            government: ['.gov', '.edu', 'who.int', 'europa.eu', 'nih.gov', 'cdc.gov', 'fda.gov'],
-            academic: ['nature.com', 'sciencedirect.com', 'springer.com', 'wiley.com', 'pubmed', 'arxiv.org', 'jstor.org'],
-            industry: ['gartner.com', 'mckinsey.com', 'hbr.org', 'forbes.com', 'bloomberg.com', 'reuters.com', 'statista.com'],
-            expert: ['techcrunch.com', 'wired.com', 'arstechnica.com', 'theverge.com']
-        };
+      const AUTHORITY_DOMAINS = {
+        government: ['.gov', '.edu', 'who.int', 'europa.eu', 'nih.gov', 'cdc.gov', 'fda.gov'],
+        academic: ['nature.com', 'sciencedirect.com', 'springer.com', 'wiley.com', 'pubmed', 'arxiv.org', 'jstor.org'],
+        industry: ['gartner.com', 'mckinsey.com', 'hbr.org', 'forbes.com', 'bloomberg.com', 'reuters.com', 'statista.com'],
+        expert: ['techcrunch.com', 'wired.com', 'arstechnica.com', 'theverge.com']
+      };
 
-        const BLOCKED_DOMAINS = [
-            'quora.com', 'reddit.com', 'pinterest.com', 'facebook.com', 'twitter.com',
-            'youtube.com', 'tiktok.com', 'instagram.com', 'linkedin.com', 'medium.com',
-            'scribd.com', 'slideshare.net', 'academia.edu', 'researchgate.net'
-        ];
+      const BLOCKED_DOMAINS = [
+        'quora.com', 'reddit.com', 'pinterest.com', 'facebook.com', 'twitter.com',
+        'youtube.com', 'tiktok.com', 'instagram.com', 'linkedin.com', 'medium.com',
+        'scribd.com', 'slideshare.net', 'academia.edu', 'researchgate.net'
+      ];
 
-        for (const section of sectionTopics.slice(0, 6)) {
-            const sectionQuery = `${section} ${keyword} research statistics data ${TARGET_YEAR} -site:quora.com -site:reddit.com -site:pinterest.com`;
+      for (const section of sectionTopics.slice(0, 6)) {
+        const sectionQuery = `${section} ${keyword} research statistics data ${TARGET_YEAR} -site:quora.com -site:reddit.com -site:pinterest.com`;
 
+        try {
+          const response = await fetch("https://google.serper.dev/search", {
+            method: 'POST',
+            headers: { 'X-API-KEY': serperApiKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ q: sectionQuery, num: 10 })
+          });
+
+          const data = await response.json();
+          const results = (data.organic || []).slice(0, 8);
+
+          const sectionRefs: DynamicReference[] = [];
+
+          for (const result of results) {
             try {
-                const response = await fetch("https://google.serper.dev/search", {
-                    method: 'POST',
-                    headers: { 'X-API-KEY': serperApiKey, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ q: sectionQuery, num: 10 })
-                });
+              const domain = new URL(result.link).hostname.replace('www.', '');
 
-                const data = await response.json();
-                const results = (data.organic || []).slice(0, 8);
+              if (BLOCKED_DOMAINS.some(blocked => domain.includes(blocked))) continue;
+              if (wpUrl && domain.includes(new URL(wpUrl).hostname.replace('www.', ''))) continue;
 
-                const sectionRefs: DynamicReference[] = [];
+              let category: DynamicReference['category'] = 'Expert';
+              let authorityScore = 50;
 
-                for (const result of results) {
-                    try {
-                        const domain = new URL(result.link).hostname.replace('www.', '');
+              if (AUTHORITY_DOMAINS.government.some(d => domain.includes(d))) {
+                category = 'Government';
+                authorityScore = 95;
+              } else if (AUTHORITY_DOMAINS.academic.some(d => domain.includes(d))) {
+                category = 'Academic';
+                authorityScore = 90;
+              } else if (AUTHORITY_DOMAINS.industry.some(d => domain.includes(d))) {
+                category = 'Industry';
+                authorityScore = 85;
+              } else if (AUTHORITY_DOMAINS.expert.some(d => domain.includes(d))) {
+                category = 'News';
+                authorityScore = 75;
+              }
 
-                        if (BLOCKED_DOMAINS.some(blocked => domain.includes(blocked))) continue;
-                        if (wpUrl && domain.includes(new URL(wpUrl).hostname.replace('www.', ''))) continue;
+              sectionRefs.push({
+                title: result.title,
+                url: result.link,
+                domain,
+                authorityScore,
+                relevanceScore: 80,
+                publicationDate: result.date || TARGET_YEAR.toString(),
+                snippet: result.snippet || '',
+                category
+              });
+            } catch { }
+          }
 
-                        let category: DynamicReference['category'] = 'Expert';
-                        let authorityScore = 50;
+          sectionRefs.sort((a, b) => b.authorityScore - a.authorityScore);
+          referenceMap.set(section, sectionRefs.slice(0, 3));
 
-                        if (AUTHORITY_DOMAINS.government.some(d => domain.includes(d))) {
-                            category = 'Government';
-                            authorityScore = 95;
-                        } else if (AUTHORITY_DOMAINS.academic.some(d => domain.includes(d))) {
-                            category = 'Academic';
-                            authorityScore = 90;
-                        } else if (AUTHORITY_DOMAINS.industry.some(d => domain.includes(d))) {
-                            category = 'Industry';
-                            authorityScore = 85;
-                        } else if (AUTHORITY_DOMAINS.expert.some(d => domain.includes(d))) {
-                            category = 'News';
-                            authorityScore = 75;
-                        }
-
-                        sectionRefs.push({
-                            title: result.title,
-                            url: result.link,
-                            domain,
-                            authorityScore,
-                            relevanceScore: 80,
-                            publicationDate: result.date || TARGET_YEAR.toString(),
-                            snippet: result.snippet || '',
-                            category
-                        });
-                    } catch {}
-                }
-
-                sectionRefs.sort((a, b) => b.authorityScore - a.authorityScore);
-                referenceMap.set(section, sectionRefs.slice(0, 3));
-
-                await new Promise(r => setTimeout(r, 200));
-            } catch (e) {
-                console.error(`[GodModeUltra] Reference fetch error for ${section}:`, e);
-            }
+          await new Promise(r => setTimeout(r, 200));
+        } catch (e) {
+          console.error(`[GodModeUltra] Reference fetch error for ${section}:`, e);
         }
+      }
 
-        return referenceMap;
+      return referenceMap;
     },
 
     generateReferencesHtml(referenceMap: Map<string, DynamicReference[]>, keyword: string): string {
-        const allRefs: DynamicReference[] = [];
-        referenceMap.forEach(refs => allRefs.push(...refs));
+      const allRefs: DynamicReference[] = [];
+      referenceMap.forEach(refs => allRefs.push(...refs));
 
-        const uniqueRefs = allRefs.filter((ref, index, self) =>
-            index === self.findIndex(r => r.url === ref.url)
-        ).slice(0, 10);
+      const uniqueRefs = allRefs.filter((ref, index, self) =>
+        index === self.findIndex(r => r.url === ref.url)
+      ).slice(0, 10);
 
-        if (uniqueRefs.length === 0) return '';
+      if (uniqueRefs.length === 0) return '';
 
-        const categoryIcons: Record<string, string> = {
-            'Government': '🏛️',
-            'Academic': '🎓',
-            'Industry': '📊',
-            'Research': '🔬',
-            'News': '📰',
-            'Expert': '💡'
-        };
+      const categoryIcons: Record<string, string> = {
+        'Government': '🏛️',
+        'Academic': '🎓',
+        'Industry': '📊',
+        'Research': '🔬',
+        'News': '📰',
+        'Expert': '💡'
+      };
 
-        const listItems = uniqueRefs.map(ref => `
+      const listItems = uniqueRefs.map(ref => `
             <li style="padding: 1rem; background: white; border-radius: 8px; margin-bottom: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); transition: transform 0.2s;">
                 <a href="${ref.url}" target="_blank" rel="noopener noreferrer" style="color: #1e40af; font-weight: 600; text-decoration: none; display: block; margin-bottom: 0.25rem;">
                     ${ref.title}
@@ -1081,7 +891,7 @@ ${sitelinks ? `SUBTOPICS: ${sitelinks}` : ''}
             </li>
         `).join('');
 
-        return `
+      return `
 <div class="sota-references-section" style="margin-top: 3rem; padding: 2rem; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-radius: 16px; border: 1px solid #e2e8f0;">
     <h2 style="margin-top: 0; font-size: 1.5rem; color: #0f172a; display: flex; align-items: center; gap: 0.5rem; border-bottom: 2px solid #3b82f6; padding-bottom: 0.75rem; margin-bottom: 1.5rem;">
         <span>📚</span> Research Sources & Further Reading
@@ -1098,6 +908,6 @@ ${sitelinks ? `SUBTOPICS: ${sitelinks}` : ''}
 </div>
         `.trim();
     }
-};
+  };
 
-export default GOD_MODE_ULTRA_PROMPTS;
+  export default GOD_MODE_ULTRA_PROMPTS;
