@@ -626,7 +626,7 @@ const App = () => {
                                                         ))
                                                     )}
                                                 </div>
-                                                                      <GodModeUrlSelector isGodModeActive={isGodMode} onUrlsChange={(urls) => { try { localStorage.setItem('godModeUrls', JSON.stringify(urls)); } catch {} if (isGodMode) { const context: GenerationContext = { dispatch, existingPages, siteInfo, wpConfig, geoTargeting, serperApiKey: apiKeys.serperApiKey, apiKeyStatus, apiClients, selectedModel, openrouterModels, selectedGroqModel, neuronConfig }; maintenanceEngine.updateContext(context); } }} />
+                                                                      <GodModeUrlSelector isGodModeActive={isGodMode} onUrlsChange={(urls) => { try { localStorage.setItem('godModeUrls', JSON.stringify(urls)); console.log('[URL Targeting] Saved', urls.length, 'URLs to localStorage'); } catch (e) { console.error('[URL Targeting] Failed to save:', e); } }} />
 
                                             </div>
                                         )}
