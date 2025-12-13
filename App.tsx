@@ -584,10 +584,7 @@ const App = () => {
                                 <div className="tabs" role="tablist">
                                     <button className={`tab-btn ${contentMode === 'bulk' ? 'active' : ''}`} onClick={() => setContentMode('bulk')} role="tab">Bulk Content Planner</button>
                                     <button className={`tab-btn ${contentMode === 'single' ? 'active' : ''}`} onClick={() => setContentMode('single')} role="tab">Single Article</button>
-                                    <button className={`tab-btn ${contentMode === 'gapAnalysis' ? 'active' : ''}`} onClick={() => setContentMode('740
-                                                                                                                                                 620
-                                    ')} role="tab">Gap Analysis (God Mode)</button>
-                                    <button className={`tab-btn ${contentMode === 'refresh' ? 'active' : ''}`} onClick={() => setContentMode('refresh')} role="tab">Quick Refresh & Validate</button>
+<button className={`tab-btn ${contentMode === 'gapAnalysis' ? 'active' : ''}`} onClick={() => setContentMode('gapAnalysis')} role="tab">Gap Analysis (God Mode)</button>
                                     <button className={`tab-btn ${contentMode === 'hub' ? 'active' : ''}`} onClick={() => setContentMode('hub')} role="tab">Content Hub</button>
                                     <button className={`tab-btn ${contentMode === 'imageGenerator' ? 'active' : ''}`} onClick={() => setContentMode('imageGenerator')} role="tab">Image Generator</button>
                                 </div>
