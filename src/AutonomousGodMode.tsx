@@ -131,6 +131,23 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
     return iconMap[status];
   };
 
+  
+
+  // LOAD USER TARGET URLs FROM localStorage ON COMPONENT MOUNT
+  useEffect(() => {
+    try {
+      const storedUrls = localStorage.getItem('godModeUrls');
+      if (storedUrls) {
+        const urls = JSON.parse(storedUrls);
+        if (Array.isArray(urls) && urls.length > 0) {
+          onTargetUrlsChange?.(urls);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load godModeUrls:', e);
+    }
+  }, []);
+
   return (
     <div style={{
       background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.06) 0%, rgba(10, 10, 15, 0) 100%)',
