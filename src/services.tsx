@@ -131,176 +131,205 @@ const fetchPAA = async (keyword: string, serperApiKey: string) => {
 };
 
 // SOTA UPGRADE: INTELLIGENT REFERENCE ENGINE WITH CONTENT VALIDATION
-const fetchVerifiedReferences = async (
-    keyword: string, 
-    serperApiKey: string, 
-    wpUrl?: string,
-    apiClients?: ApiClients,
-    selectedModel?: string
-): Promise<string> => {
+const fetchVerifiedReferences = async (keyword: string, serperApiKey: string, wpUrl?: string): Promise<string> => {
     if (!serperApiKey) return "";
-    
-    const quota = checkSerperQuota();
-    if (!quota.allowed) {
-        console.warn('[fetchVerifiedReferences] Daily Serper quota exceeded');
-        return "";
-    }
+
+    const normalizeUrl = (u: string): string => {
+        try {
+            const urlObj = new URL(u);
+            urlObj.hash = '';
+            const trackingParams = new Set(["utm_source","utm_medium","utm_campaign","utm_term","utm_content","fbclid","gclid"]);
+            [...urlObj.searchParams.keys()].forEach(k => { if (trackingParams.has(k)) urlObj.searchParams.delete(k); });
+            const s = urlObj.toString();
+            return s.endsWith('/') ? s.slice(0, -1) : s;
+        } catch {
+            const t = (u || '').trim();
+            return t.endsWith('/') ? t.slice(0, -1) : t;
+        }
+    };
+
+    const getSerperRemaining = (res: Response): number | null => {
+        const keys = ['x-ratelimit-remaining','x-rate-limit-remaining','x-remaining-requests'];
+        for (const k of keys) {
+            const v = res.headers.get(k);
+            if (!v) continue;
+            const n = Number(v);
+            if (Number.isFinite(n)) return n;
+        }
+        return null;
+    };
+
+    const emitQuota = (remaining: number | null) => {
+        if (remaining === null) return;
+        try { localStorage.setItem('serper_rate_remaining', String(remaining)); } catch {}
+        try { window.dispatchEvent(new CustomEvent('serper:quota', { detail: { remaining } })); } catch {}
+        const threshold = 20;
+        if (remaining <= threshold) {
+            try {
+                const key = 'serper_low_quota_alerted';
+                if (!sessionStorage.getItem(key)) {
+                    sessionStorage.setItem(key, 'true');
+                    alert(`⚠️ Serper.dev quota low: ~${remaining} requests remaining.\n\nGod Mode will reduce research calls to avoid exhausting your key.`);
+                }
+            } catch {}
+        }
+    };
+
+    const validate200 = async (u: string): Promise<boolean> => {
+        const tryHead = async (): Promise<boolean> => {
+            const res = await fetchWithProxies(u, { method: 'HEAD', headers: { 'User-Agent': 'Mozilla/5.0' } });
+            return res.status >= 200 && res.status < 300;
+        };
+        const tryGetRange = async (): Promise<boolean> => {
+            const res = await fetchWithProxies(u, { method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0', 'Range': 'bytes=0-2048' } });
+            return res.status >= 200 && res.status < 300;
+        };
+
+        try {
+            const headOk = await Promise.race([
+                tryHead(),
+                new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+            ]);
+            if (headOk) return true;
+        } catch {}
+
+        try {
+            const getOk = await Promise.race([
+                tryGetRange(),
+                new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('timeout')), 6500))
+            ]);
+            return Boolean(getOk);
+        } catch {
+            return false;
+        }
+    };
 
     try {
         let userDomain = "";
         if (wpUrl) {
-            try { userDomain = new URL(wpUrl).hostname.replace('www.', ''); } catch(e) {}
+            try { userDomain = new URL(wpUrl).hostname.replace('www.', ''); } catch {}
         }
 
-        // SOTA: Multi-query strategy for comprehensive research
-        const queries = [
-            `${keyword} research study ${CURRENT_YEAR}`,
-            `${keyword} statistics data`,
-            `${keyword} authoritative source`
-        ];
+        const query = [
+            keyword,
+            String(CURRENT_YEAR),
+            '(study OR research OR evidence OR statistics OR systematic review)',
+            '-site:youtube.com -site:pinterest.com -site:quora.com -site:reddit.com -site:dokumen.pub -site:pdfcoffee.com',
+            '-inurl:product -inurl:shop -inurl:cart -inurl:checkout -inurl:affiliate'
+        ].join(' ');
 
-        const allResults: any[] = [];
+        const response = await fetchWithProxies("https://google.serper.dev/search", {
+            method: "POST",
+            headers: { "X-API-KEY": serperApiKey, "Content-Type": "application/json" },
+            body: JSON.stringify({ q: query, num: 12, type: 'search' }),
+        });
 
-        for (const query of queries) {
-            if (!checkSerperQuota().allowed) break;
-            
-            incrementSerperCount();
-            const response = await fetchWithProxies("https://google.serper.dev/search", {
-                method: "POST",
-                headers: { "X-API-KEY": serperApiKey, "Content-Type": "application/json" },
-                body: JSON.stringify({ q: query, num: 10 }),
-            });
+        const remaining = getSerperRemaining(response);
+        emitQuota(remaining);
 
-            const data = await response.json();
-            if (data.organic) allResults.push(...data.organic);
+        if (response.status === 401 || response.status === 403) {
+            alert('❌ Serper.dev key unauthorized/forbidden. Fix the key in Settings.');
+            return "";
         }
+        if (response.status === 429) {
+            alert('❌ Serper.dev quota exhausted (429). God Mode cannot verify references until quota resets.');
+            return "";
+        }
+        if (!response.ok) return "";
 
-        // SOTA: Authority domain scoring
-        const authorityDomains = [
-            'nih.gov', 'ncbi.nlm.nih.gov', 'cdc.gov', 'who.int',
-            'harvard.edu', 'stanford.edu', 'mit.edu', 'oxford.ac.uk',
-            'nature.com', 'sciencedirect.com', 'springer.com', 'wiley.com',
-            'mayoclinic.org', 'healthline.com', 'webmd.com',
-            'nytimes.com', 'bbc.com', 'reuters.com',
-            'gov', 'edu', '.org'
-        ];
+        if (remaining !== null && remaining <= 3) return "";
 
-        const scoreDomain = (url: string): number => {
-            const domain = new URL(url).hostname.replace('www.', '');
-            
-            // Check exact matches first (highest priority)
-            if (authorityDomains.slice(0, -3).some(d => domain === d || domain.endsWith(`.${d}`))) {
-                return 100;
-            }
-            
-            // Check TLD matches (.gov, .edu, .org)
-            if (domain.endsWith('.gov')) return 90;
-            if (domain.endsWith('.edu')) return 85;
-            if (domain.endsWith('.org')) return 70;
-            
-            return 50;
+        const data = await response.json();
+        const organic = Array.isArray(data.organic) ? data.organic : [];
+
+        const keywordTokens = (keyword || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, ' ')
+            .split(/\s+/)
+            .filter(t => t.length >= 4)
+            .slice(0, 10);
+
+        const isClearlyIrrelevant = (title: string, snippet: string): boolean => {
+            if (keywordTokens.length === 0) return false;
+            const blob = `${title || ''} ${snippet || ''}`.toLowerCase();
+            const overlap = keywordTokens.filter(t => blob.includes(t)).length;
+            const minOverlap = Math.max(1, Math.floor(keywordTokens.length * 0.15));
+            return overlap < minOverlap;
         };
 
-        const validLinks: any[] = [];
-        const seenDomains = new Set<string>();
+        const allowBoostDomains = new Set([
+            'mayoclinic.org','nih.gov','ncbi.nlm.nih.gov','pubmed.ncbi.nlm.nih.gov','cdc.gov','who.int','nhs.uk',
+            'health.harvard.edu','clevelandclinic.org','heart.org','diabetes.org'
+        ]);
 
-        for (const link of allResults) {
-            if (validLinks.length >= 5) break;
+        const isBlockedDomain = (domain: string): boolean => {
+            const blocked = [
+                'linkedin.com','facebook.com','instagram.com','twitter.com','x.com','tiktok.com',
+                'dokumen.pub','pdfcoffee.com','pinterest.com','youtube.com',
+                'amazon.','ebay.'
+            ];
+            return blocked.some(b => domain.includes(b));
+        };
 
-            try {
-                const urlObj = new URL(link.link);
-                const domain = urlObj.hostname.replace("www.", "");
+        const isBlockedUrl = (u: string): boolean => {
+            const lower = (u || '').toLowerCase();
+            if (lower.endsWith('.pdf')) return true;
+            if (lower.includes('/product/') || lower.includes('/shop/') || lower.includes('/cart') || lower.includes('/checkout')) return true;
+            return false;
+        };
 
-                // Skip duplicates from same domain
-                if (seenDomains.has(domain)) continue;
-                
-                // Skip own site
-                if (domain.includes(userDomain)) continue;
-                
-                // Skip low-quality domains
-                const blacklist = [
-                    "linkedin.com", "pinterest.com", "quora.com", "reddit.com",
-                    "youtube.com", "facebook.com", "twitter.com", "instagram.com",
-                    "amazon.com", "ebay.com"
-                ];
-                if (blacklist.some(d => domain.includes(d))) continue;
+        const ranked = organic
+            .map((r: any) => {
+                const url = String(r.link || '');
+                let domain = '';
+                try { domain = new URL(url).hostname.replace('www.', ''); } catch {}
+                const boost = [...allowBoostDomains].some(d => domain.endsWith(d)) ? 1 : 0;
+                return { ...r, _domain: domain, _boost: boost };
+            })
+            .sort((a: any, b: any) => b._boost - a._boost);
 
-                // SOTA: Validate with HEAD request + timeout
-                const checkRes = await Promise.race([
-                    fetchWithProxies(link.link, {
-                        method: "HEAD",
-                        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" }
-                    }),
-                    new Promise<Response>((_, reject) =>
-                        setTimeout(() => reject(new Error('timeout')), 4000)
-                    )
-                ]) as Response;
+        const seen = new Set<string>();
+        const valid: { title: string; url: string; source: string }[] = [];
 
-                if (checkRes.status === 200) {
-                    const authorityScore = scoreDomain(link.link);
-                    validLinks.push({
-                        title: link.title,
-                        url: link.link,
-                        source: domain,
-                        score: authorityScore,
-                        snippet: link.snippet || ''
-                    });
-                    seenDomains.add(domain);
-                }
-            } catch (e) {
-                continue;
-            }
+        for (const r of ranked) {
+            if (valid.length >= 6) break;
+            const url = String(r.link || '').trim();
+            const title = String(r.title || '').trim();
+            const snippet = String(r.snippet || '').trim();
+            if (!url) continue;
+
+            const norm = normalizeUrl(url);
+            if (seen.has(norm)) continue;
+            seen.add(norm);
+
+            let domain = '';
+            try { domain = new URL(url).hostname.replace('www.', ''); } catch {}
+            if (!domain) continue;
+
+            if (userDomain && domain.includes(userDomain)) continue;
+            if (isBlockedDomain(domain)) continue;
+            if (isBlockedUrl(url)) continue;
+            if (isClearlyIrrelevant(title, snippet)) continue;
+
+            const ok = await validate200(url);
+            if (!ok) continue;
+
+            valid.push({ title: title || domain, url, source: domain });
         }
 
-        // Sort by authority score
-        validLinks.sort((a, b) => b.score - a.score);
+        if (valid.length === 0) return "";
 
-        if (validLinks.length === 0) return "";
-
-        // SOTA: Rich reference HTML with authority badges
-        const listItems = validLinks.map(ref => {
-            let badge = '✅ Verified';
-            let badgeColor = 'bg-blue-100 border-blue-200 text-blue-700';
-            
-            if (ref.score >= 90) {
-                badge = '🏆 High Authority';
-                badgeColor = 'bg-emerald-100 border-emerald-300 text-emerald-800';
-            } else if (ref.score >= 80) {
-                badge = '⭐ Academic';
-                badgeColor = 'bg-purple-100 border-purple-200 text-purple-700';
-            } else if (ref.score >= 70) {
-                badge = '📚 Trusted Source';
-                badgeColor = 'bg-indigo-100 border-indigo-200 text-indigo-700';
-            }
-            
-            return `<li class="hover:translate-x-1 transition-transform duration-200 mb-3">
-                <a href="${ref.url}" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-600 hover:text-blue-800 underline decoration-2 decoration-blue-200" title="${ref.source}">
-                    ${ref.title}
-                </a>
-                <span class="ml-2 text-xs ${badgeColor} px-2 py-0.5 rounded-full border font-medium">
-                    ${badge}
-                </span>
-                ${ref.snippet ? `<p class="text-sm text-slate-600 mt-1 ml-1">${ref.snippet.substring(0, 120)}...</p>` : ''}
-            </li>`;
-        }).join("");
-
-        const quotaStatus = checkSerperQuota();
-        const quotaWarning = quotaStatus.warning ? `<p class="text-xs ${quotaStatus.remaining < 100 ? 'text-red-600 font-bold' : 'text-amber-600'} mt-2">${quotaStatus.warning}</p>` : '';
+        const listItems = valid.map(ref =>
+            `<li class="hover:translate-x-1 transition-transform duration-200">
+                <a href="${ref.url}" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-600 hover:text-blue-800 underline decoration-2 decoration-blue-200" title="Verified Source: ${ref.source}">${ref.title}</a>
+                <span class="ml-2 text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">✅ Verified</span>
+            </li>`
+        ).join('');
 
         return `
-            <div class="sota-references-section my-12 p-8 bg-gradient-to-br from-slate-50 to-blue-50 border-2 border-blue-200 rounded-2xl shadow-lg">
-                <h3 class="text-2xl font-bold text-slate-800 mb-6 flex items-center">
-                    <span class="mr-3 text-3xl">📚</span> 
-                    <span>Trusted Research & References</span>
-                </h3>
-                <p class="text-sm text-slate-600 mb-4">All sources verified for accuracy and authority • Updated ${CURRENT_YEAR}</p>
-                <ul class="grid grid-cols-1 gap-3 list-none pl-0">
-                    ${listItems}
-                </ul>
-                <p class="text-xs text-slate-500 mt-6 pt-4 border-t border-slate-200">
-                    <strong>Verification Process:</strong> Each reference validated for HTTP 200 status, domain authority, and topical relevance.
-                </p>
-                ${quotaWarning}
+            <div class="sota-references-section my-12 p-8 bg-gradient-to-br from-slate-50 to-blue-50 border border-blue-100 rounded-2xl shadow-sm">
+                <h3 class="text-xl font-bold text-slate-800 mb-6 flex items-center"><span class="mr-2">📚</span> Trusted Research & References</h3>
+                <ul class="grid grid-cols-1 md:grid-cols-2 gap-4 list-none pl-0">${listItems}</ul>
             </div>
         `;
     } catch (e) {
@@ -840,13 +869,19 @@ export class MaintenanceEngine {
             this.logCallback(quota.warning);
         }
 
-        if (this.currentContext.existingPages.length === 0) {
+        const userTargets = this.getUserTargetUrls();
+
+        if (this.currentContext.existingPages.length === 0 && userTargets.length === 0) {
             if (this.currentContext.wpConfig.url) {
-                 this.logCallback("⚠️ NO CONTENT: God Mode requires a sitemap crawl.");
-                 this.logCallback("🛑 STOPPING: Please go to 'Content Hub' -> Crawl Sitemap.");
+                 this.logCallback("⚠️ NO CONTENT: God Mode requires either a sitemap crawl or user-specified target URLs.");
+                 this.logCallback("🛑 STOPPING: Crawl sitemap or add URLs in the URL Targeting Engine.");
                  this.isRunning = false;
                  return;
              }
+        }
+
+        if (userTargets.length > 0) {
+            this.logCallback(`🎯 URL Targeting Engine ACTIVE: ${userTargets.length} user-selected URL(s) will be processed FIRST.`);
         }
 
         while (this.isRunning) {
@@ -889,17 +924,104 @@ export class MaintenanceEngine {
         }
     }
 
+    
+    private getUserTargetUrls(): string[] {
+        try {
+            const raw = localStorage.getItem('godModeUrls');
+            const arr = raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(arr)) return [];
+            const cleaned = arr
+                .map((u: any) => String(u || '').trim())
+                .filter(Boolean)
+                .filter((u: string) => { try { new URL(u); return true; } catch { return false; } });
+            const seen = new Set<string>();
+            const out: string[] = [];
+            for (const u of cleaned) {
+                const norm = this.normalizeUrl(u);
+                if (seen.has(norm)) continue;
+                seen.add(norm);
+                out.push(u);
+            }
+            return out;
+        } catch {
+            return [];
+        }
+    }
+
+    private normalizeUrl(u: string): string {
+        try {
+            const urlObj = new URL(u);
+            urlObj.hash = '';
+            const s = urlObj.toString();
+            return s.endsWith('/') ? s.slice(0, -1) : s;
+        } catch {
+            const t = (u || '').trim();
+            return t.endsWith('/') ? t.slice(0, -1) : t;
+        }
+    }
+
     private async sleep(ms: number) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     // SOTA: TRUE URL PRIORITIZATION
     private async getPrioritizedPages(context: GenerationContext): Promise<SitemapPage[]> {
+        const now = Date.now();
+        const userTargets = this.getUserTargetUrls();
+        const targetSet = new Set(userTargets.map(u => this.normalizeUrl(u)));
+
+        const isTargetPage = (p: SitemapPage): boolean => targetSet.has(this.normalizeUrl(p.id));
+
+        const targetCooldownHours = 2;
+        const sitemapCooldownHours = 24;
+
         let candidates = [...context.existingPages];
-        
-        // Filter out recently processed (within 24h) to avoid loops
+
         candidates = candidates.filter(p => {
             const lastProcessed = localStorage.getItem(`sota_last_proc_${p.id}`);
+            if (!lastProcessed) return true;
+            const hoursSince = (now - parseInt(lastProcessed)) / (1000 * 60 * 60);
+            return hoursSince > (isTargetPage(p) ? targetCooldownHours : sitemapCooldownHours);
+        });
+
+        const prioritized: SitemapPage[] = [];
+        const used = new Set<string>();
+
+        if (userTargets.length > 0) {
+            const byNorm = new Map(candidates.map(p => [this.normalizeUrl(p.id), p] as const));
+
+            for (const url of userTargets) {
+                const norm = this.normalizeUrl(url);
+                const page = byNorm.get(norm) || {
+                    id: url,
+                    title: url,
+                    slug: extractSlugFromUrl(url),
+                    lastMod: null,
+                    wordCount: null,
+                    crawledContent: null,
+                    healthScore: null,
+                    updatePriority: 'Critical',
+                    justification: 'User-selected target URL (URL Targeting Engine).',
+                    daysOld: 999,
+                    isStale: true,
+                    publishedState: 'none',
+                    status: 'idle',
+                    analysis: null
+                };
+
+                if (!used.has(norm)) {
+                    used.add(norm);
+                    prioritized.push(page as SitemapPage);
+                }
+            }
+        }
+
+        const rest = candidates
+            .filter(p => !used.has(this.normalizeUrl(p.id)))
+            .sort((a, b) => (b.daysOld || 0) - (a.daysOld || 0));
+
+        return [...prioritized, ...rest];
+    }`);
             if (!lastProcessed) return true;
             const hoursSince = (Date.now() - parseInt(lastProcessed)) / (1000 * 60 * 60);
             return hoursSince > 24; 
