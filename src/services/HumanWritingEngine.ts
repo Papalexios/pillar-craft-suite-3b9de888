@@ -11,6 +11,7 @@ import {
   FactValidationEngine,
   StalenessDetector,
 } from './SOTAEnhancements';
+import { referenceValidator } from './ReferenceValidator';
 
 const HORMOZI_OPENERS = [
   'Look.',
