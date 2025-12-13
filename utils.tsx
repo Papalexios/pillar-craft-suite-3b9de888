@@ -415,12 +415,30 @@ export const callAiWithRetry = async (apiCall: () => Promise<any>, maxRetries = 
 };
 
 /**
- * Smartly fetches a WordPress API endpoint.
+ * Smartly fetches a WordPress API endpoint with robust header handling.
  * INTEGRATES SERVER GUARD TO PREVENT CPU SPIKES.
+ * SOTA FIX: Handles Headers instances, arrays, and plain objects.
  */
 export const fetchWordPressWithRetry = async (targetUrl: string, options: RequestInit): Promise<Response> => {
     const REQUEST_TIMEOUT = 45000; 
-    const hasAuthHeader = options.headers && (options.headers as Headers).has('Authorization');
+
+    // SOTA FIX: Robustly check for Authorization header across all header formats
+    let hasAuthHeader = false;
+    if (options.headers) {
+        if (typeof options.headers === 'object' && options.headers !== null) {
+            if (options.headers instanceof Headers) {
+                // Headers instance - use .has()
+                hasAuthHeader = options.headers.has('Authorization');
+            } else if (Array.isArray(options.headers)) {
+                // Array of [key, value] pairs
+                hasAuthHeader = options.headers.some(pair => pair[0].toLowerCase() === 'authorization');
+            } else {
+                // Plain JavaScript object
+                const headers = options.headers as Record<string, string>;
+                hasAuthHeader = Object.keys(headers).some(k => k.toLowerCase() === 'authorization');
+            }
+        }
+    }
 
     // SERVER GUARD: Enforce cooldown before sending any WP request
     await serverGuard.wait();
@@ -442,7 +460,7 @@ export const fetchWordPressWithRetry = async (targetUrl: string, options: Reques
     try {
         let response: Response;
         if (hasAuthHeader) {
-            // Auth requests must go direct
+            // Auth requests must go direct (no proxy)
             response = await executeFetch(targetUrl, options);
         } else {
             // Non-auth can try direct then proxy
