@@ -20,6 +20,7 @@ import { listNeuronProjects, NeuronProject } from './neuronwriter';
 // @ts-ignore
 import mermaid from 'mermaid';
 import { GodModeUrlSelector } from './GodModeUrlSelector';
+import { AutonomousGodMode } from './AutonomousGodMode';
 
 interface ErrorBoundaryProps {
     children?: React.ReactNode;
