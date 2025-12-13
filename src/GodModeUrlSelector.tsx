@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface GodModeUrlSelectorProps {
   onUrlsChange: (urls: string[]) => void;
@@ -17,12 +17,12 @@ export const GodModeUrlSelector: React.FC<GodModeUrlSelectorProps> = ({
     }
   });
   const [newUrl, setNewUrl] = useState('');
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const handleAddUrl = () => {
     if (!newUrl.trim()) return;
     const urlToAdd = newUrl.trim();
     
-    // Validate URL format
     try {
       new URL(urlToAdd);
     } catch {
@@ -59,172 +59,246 @@ export const GodModeUrlSelector: React.FC<GodModeUrlSelectorProps> = ({
 
   return (
     <div style={{
-      background: '#020617',
-      padding: '1rem',
-      borderRadius: '8px',
-      border: '1px solid #1e293b',
-      marginTop: '1rem'
+      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(10, 10, 15, 0) 100%)',
+      border: '1.5px solid #10b981',
+      borderRadius: '12px',
+      padding: '1.5rem',
+      marginTop: '1.5rem',
+      boxShadow: '0 8px 32px rgba(16, 185, 129, 0.08), inset 0 1px 0 rgba(16, 185, 129, 0.1)',
+      backdropFilter: 'blur(10px)',
+      transition: 'all 0.3s ease'
     }}>
-      <h4 style={{ marginTop: 0, marginBottom: '0.5rem', color: '#f1f5f9' }}>
-        🎯 Select Specific URLs to Optimize
-      </h4>
-      <p style={{ margin: '0 0 1rem 0', color: '#94a3b8', fontSize: '0.85rem' }}>
-        Add the specific URLs you want GOD MODE to automatically optimize. Leave empty to process all URLs from your sitemap.
-      </p>
-
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-        <input
-          type="url"
-          value={newUrl}
-          onChange={e => setNewUrl(e.target.value)}
-          onKeyPress={e => e.key === 'Enter' && handleAddUrl()}
-          placeholder="https://example.com/article-to-optimize"
-          disabled={!isGodModeActive}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '1rem'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <span style={{ fontSize: '1.5rem' }}>🎯</span>
+          <div>
+            <h4 style={{ margin: '0 0 0.25rem 0', color: '#f1f5f9', fontSize: '1.1rem', fontWeight: '600' }}>
+              URL Targeting Engine
+            </h4>
+            <p style={{ margin: '0', color: '#64748b', fontSize: '0.8rem' }}>
+              {urlsToMonitor.length === 0 
+                ? 'Auto-process all URLs from sitemap' 
+                : `Focused optimization: ${urlsToMonitor.length} URL${urlsToMonitor.length !== 1 ? 's' : ''}`
+              }
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
           style={{
-            flex: 1,
-            padding: '0.6rem',
-            backgroundColor: 'var(--bg-secondary)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border-primary)',
-            borderRadius: 'var(--border-radius-md)',
-            fontSize: '0.9rem',
+            background: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            color: '#10b981',
+            padding: '0.5rem 1rem',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '0.85rem',
+            fontWeight: '500',
+            transition: 'all 0.2s ease',
             opacity: isGodModeActive ? 1 : 0.5
           }}
-        />
-        <button
-          onClick={handleAddUrl}
-          disabled={!isGodModeActive || !newUrl.trim()}
-          style={{
-            padding: '0.6rem 1rem',
-            backgroundColor: isGodModeActive && newUrl.trim() ? '#10b981' : '#4b5563',
-            color: 'white',
-            border: 'none',
-            borderRadius: 'var(--border-radius-md)',
-            cursor: isGodModeActive && newUrl.trim() ? 'pointer' : 'not-allowed',
-            fontSize: '0.9rem',
-            fontWeight: '500'
-          }}
+          disabled={!isGodModeActive}
         >
-          + Add URL
+          {isExpanded ? '−' : '+'} {isExpanded ? 'Collapse' : 'Expand'}
         </button>
       </div>
 
-      {urlsToMonitor.length > 0 ? (
-        <div>
+      {isExpanded && (
+        <>
           <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '0.75rem'
+            background: 'rgba(10, 10, 15, 0.4)',
+            border: '1px solid rgba(16, 185, 129, 0.2)',
+            borderRadius: '10px',
+            padding: '1rem',
+            marginBottom: '1rem'
           }}>
-            <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
-              {urlsToMonitor.length} URL{urlsToMonitor.length !== 1 ? 's' : ''} selected for GOD MODE
-            </span>
-            <button
-              onClick={handleClearAll}
-              disabled={!isGodModeActive}
-              style={{
-                padding: '0.3rem 0.8rem',
-                backgroundColor: 'transparent',
-                color: '#ef4444',
-                border: '1px solid #ef4444',
-                borderRadius: '4px',
-                cursor: isGodModeActive ? 'pointer' : 'not-allowed',
-                fontSize: '0.8rem',
-                opacity: isGodModeActive ? 1 : 0.5
-              }}
-            >
-              Clear All
-            </button>
-          </div>
-
-          <div style={{
-            maxHeight: '200px',
-            overflowY: 'auto',
-            border: '1px solid #1e293b',
-            borderRadius: '6px',
-            padding: '0.5rem'
-          }}>
-            {urlsToMonitor.map((url, index) => (
-              <div
-                key={index}
+            <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: '500' }}>
+              Add URL to optimize
+            </label>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <input
+                type="url"
+                value={newUrl}
+                onChange={e => setNewUrl(e.target.value)}
+                onKeyPress={e => e.key === 'Enter' && handleAddUrl()}
+                placeholder="https://example.com/article"
+                disabled={!isGodModeActive}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0.5rem',
-                  backgroundColor: '#0f172a',
-                  marginBottom: '0.4rem',
-                  borderRadius: '4px',
-                  fontSize: '0.85rem'
+                  flex: 1,
+                  padding: '0.75rem',
+                  backgroundColor: 'rgba(30, 41, 59, 0.6)',
+                  color: '#f1f5f9',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  borderRadius: '8px',
+                  fontSize: '0.9rem',
+                  opacity: isGodModeActive ? 1 : 0.5,
+                  transition: 'all 0.2s ease',
+                  outline: 'none',
+                  fontFamily: 'monospace'
+                }}
+              />
+              <button
+                onClick={handleAddUrl}
+                disabled={!isGodModeActive || !newUrl.trim()}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  backgroundColor: isGodModeActive && newUrl.trim() ? '#10b981' : '#475569',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: isGodModeActive && newUrl.trim() ? 'pointer' : 'not-allowed',
+                  fontSize: '0.9rem',
+                  fontWeight: '600',
+                  transition: 'all 0.2s ease',
+                  boxShadow: isGodModeActive && newUrl.trim() ? '0 4px 12px rgba(16, 185, 129, 0.3)' : 'none'
                 }}
               >
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    color: '#60a5fa',
-                    textDecoration: 'none',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    flex: 1,
-                    marginRight: '0.5rem'
-                  }}
-                  title={url}
-                >
-                  {url}
-                </a>
+                + Add
+              </button>
+            </div>
+          </div>
+
+          {urlsToMonitor.length > 0 ? (
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '0.75rem',
+                paddingBottom: '0.75rem',
+                borderBottom: '1px solid rgba(16, 185, 129, 0.2)'
+              }}>
+                <span style={{ color: '#10b981', fontSize: '0.85rem', fontWeight: '600' }}>
+                  🎯 {urlsToMonitor.length} URL{urlsToMonitor.length !== 1 ? 's' : ''} targeted for optimization
+                </span>
                 <button
-                  onClick={() => handleRemoveUrl(url)}
+                  onClick={handleClearAll}
                   disabled={!isGodModeActive}
                   style={{
-                    padding: '0.2rem 0.6rem',
-                    backgroundColor: '#7f1d1d',
-                    color: '#fca5a5',
-                    border: 'none',
-                    borderRadius: '3px',
+                    padding: '0.4rem 0.9rem',
+                    backgroundColor: 'transparent',
+                    color: '#ef4444',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    borderRadius: '6px',
                     cursor: isGodModeActive ? 'pointer' : 'not-allowed',
-                    fontSize: '0.75rem',
-                    opacity: isGodModeActive ? 1 : 0.5
+                    fontSize: '0.8rem',
+                    fontWeight: '500',
+                    opacity: isGodModeActive ? 1 : 0.5,
+                    transition: 'all 0.2s ease'
                   }}
                 >
-                  Remove
+                  🗑️ Clear All
                 </button>
               </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div style={{
-          padding: '1rem',
-          backgroundColor: '#0f172a',
-          borderRadius: '6px',
-          color: '#64748b',
-          fontSize: '0.9rem',
-          textAlign: 'center'
-        }}>
-          {isGodModeActive ? (
-            <>
-              <p style={{ margin: 0 }}>No specific URLs selected.</p>
-              <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.8rem' }}>
-                GOD MODE will process all URLs from your sitemap.
-              </p>
-            </>
+
+              <div style={{
+                display: 'grid',
+                gap: '0.6rem',
+                maxHeight: '300px',
+                overflowY: 'auto'
+              }}>
+                {urlsToMonitor.map((url, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.75rem',
+                      backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                      border: '1px solid rgba(16, 185, 129, 0.2)',
+                      borderRadius: '8px',
+                      transition: 'all 0.2s ease',
+                      hover: {
+                        backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                      }
+                    }}
+                  >
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        color: '#60a5fa',
+                        textDecoration: 'none',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        flex: 1,
+                        marginRight: '0.75rem',
+                        fontSize: '0.85rem',
+                        fontFamily: 'monospace',
+                        transition: 'color 0.2s ease'
+                      }}
+                      title={url}
+                    >
+                      🔗 {url}
+                    </a>
+                    <button
+                      onClick={() => handleRemoveUrl(url)}
+                      disabled={!isGodModeActive}
+                      style={{
+                        padding: '0.4rem 0.7rem',
+                        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                        color: '#fca5a5',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: '6px',
+                        cursor: isGodModeActive ? 'pointer' : 'not-allowed',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        opacity: isGodModeActive ? 1 : 0.5,
+                        transition: 'all 0.2s ease',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      ✕ Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : (
-            <p style={{ margin: 0 }}>Enable GOD MODE to add specific URLs for optimization.</p>
+            <div style={{
+              padding: '1.5rem',
+              backgroundColor: 'rgba(10, 10, 15, 0.5)',
+              borderRadius: '8px',
+              color: '#64748b',
+              fontSize: '0.9rem',
+              textAlign: 'center',
+              marginBottom: '1rem',
+              border: '1px dashed rgba(16, 185, 129, 0.2)'
+            }}>
+              {isGodModeActive ? (
+                <>
+                  <p style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>🌍</p>
+                  <p style={{ margin: '0 0 0.3rem 0', fontWeight: '500' }}>No specific URLs selected</p>
+                  <p style={{ margin: '0', fontSize: '0.8rem' }}>
+                    GOD MODE will process all URLs from your sitemap in priority order
+                  </p>
+                </>
+              ) : (
+                <p style={{ margin: '0' }}>Enable GOD MODE to add and manage target URLs</p>
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
 
-      <p style={{
-        margin: '0.75rem 0 0 0',
-        fontSize: '0.75rem',
-        color: '#64748b'
-      }}>
-        💡 Tip: Add specific URLs to have GOD MODE focus on those pages. Leave empty to automatically process all URLs in priority order.
-      </p>
+      {!isExpanded && urlsToMonitor.length === 0 && isGodModeActive && (
+        <p style={{
+          margin: '0.5rem 0 0 0',
+          fontSize: '0.8rem',
+          color: '#64748b',
+          fontStyle: 'italic'
+        }}>
+          💡 Expand to add specific URLs, or leave empty to optimize all URLs
+        </p>
+      )}
     </div>
   );
-};
+}
