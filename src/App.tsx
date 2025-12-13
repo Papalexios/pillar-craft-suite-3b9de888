@@ -19,6 +19,7 @@ import { fetchWithProxies, smartCrawl } from './contentUtils';
 import { listNeuronProjects, NeuronProject } from './neuronwriter';
 // @ts-ignore
 import mermaid from 'mermaid';
+import { GodModeUrlSelector } from './GodModeUrlSelector';
 
 interface ErrorBoundaryProps {
     children?: React.ReactNode;
@@ -624,6 +625,7 @@ const App = () => {
                                                         ))
                                                     )}
                                                 </div>
+                                                                      <GodModeUrlSelector isGodModeActive={isGodMode} onUrlsChange={(urls) => { console.log('URLs to monitor:', urls); }} />
                                             </div>
                                         )}
                                     </div>
