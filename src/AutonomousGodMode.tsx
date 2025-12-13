@@ -234,7 +234,7 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
         </div>
       )}
 
-      {/* Status Summary */}
+)} {/* Status Summary */
       {selectedUrls.length > 0 && (
         <div style{{
           marginTop: '1rem',
