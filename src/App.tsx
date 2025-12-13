@@ -626,7 +626,8 @@ const App = () => {
                                                         ))
                                                     )}
                                                 </div>
-                                                                      <GodModeUrlSelector isGodModeActive={isGodMode} onUrlsChange={(urls) => { console.log('URLs to monitor:', urls); }} />
+                                                                      <GodModeUrlSelector isGodModeActive={isGodMode} onUrlsChange={(urls) => { try { localStorage.setItem('godModeUrls', JSON.stringify(urls)); } catch {} if (isGodMode) { const context: GenerationContext = { dispatch, existingPages, siteInfo, wpConfig, geoTargeting, serperApiKey: apiKeys.serperApiKey, apiKeyStatus, apiClients, selectedModel, openrouterModels, selectedGroqModel, neuronConfig }; maintenanceEngine.updateContext(context); } }} />
+
                                             </div>
                                         )}
                                     </div>
