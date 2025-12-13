@@ -235,7 +235,7 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
       )}
 
       {selectedUrls.length > 0 && (
-        <div style{{
+        <div style={{
           marginTop: '1rem',
           display: 'grid',
           gridTemplateColumns: 'repeat(4, 1fr)',
