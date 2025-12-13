@@ -4,6 +4,14 @@
  */
 
 // Hormozi-approved sentence openers
+import {
+  factValidationEngine,
+  stalenessDetector,
+  enhancedQualityCheck,
+  FactValidationEngine,
+  StalenessDetector,
+} from './SOTAEnhancements';
+
 const HORMOZI_OPENERS = [
   'Look.',
   "Here's the thing.",
@@ -315,3 +323,41 @@ export class HumanWritingEngine {
 }
 
 export default HumanWritingEngine;
+
+// ============================================================================
+// SOTA QUALITY CHECK WRAPPER - Applied to all generated content
+// ============================================================================
+
+export async function generateContentWithSOTAQuality(
+  topic: string,
+  keyword: string,
+  serperApiKey?: string
+): Promise<{ content: string; qualityScore: number; canPublish: boolean }> {
+  // Generate content using HumanWritingEngine
+  const engine = new HumanWritingEngine();
+  const content = engine.generateContent(topic, keyword, 500, 800);
+
+  // Apply SOTA quality checks
+  const qualityResult = await enhancedQualityCheck(
+    content,
+    keyword,
+    serperApiKey || '',
+    new Date()
+  );
+
+  return {
+    content,
+    qualityScore: qualityResult.finalScore,
+    canPublish: qualityResult.canPublish,
+  };
+}
+
+// Export SOTA components for external use
+export {
+  factValidationEngine,
+  stalenessDetector,
+  enhancedQualityCheck,
+  FactValidationEngine,
+  StalenessDetector,
+} from './SOTAEnhancements';
+
