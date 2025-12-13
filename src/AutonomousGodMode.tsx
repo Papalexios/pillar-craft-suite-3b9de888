@@ -10,13 +10,14 @@ interface URLStatusMap {
 interface AutonomousGodModeProps {
   isGodModeActive: boolean;
   onStatusUpdate?: (status: string) => void;
+  onTargetUrlsChange?: (urls: string[]) => void; // SOTA: Expose to parent
 }
 
 /**
  * AUTONOMOUS GOD MODE COMPONENT
  * 
  * State-of-the-Art Implementation:
- * - Priority-based URL processing (CRITICAL > HIGH > MEDIUM > HEALTHY)
+ * - Priority-based URL processing (USER TARGETS > CRITICAL > HIGH > MEDIUM > HEALTHY)
  * - Automatic URL monitoring and continuous optimization
  * - Intelligent URL selection from GodModeUrlSelector
  * - Real-time status tracking and reporting
@@ -24,7 +25,8 @@ interface AutonomousGodModeProps {
  */
 export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
   isGodModeActive,
-  onStatusUpdate
+  onStatusUpdate,
+  onTargetUrlsChange
 }) => {
   const [selectedUrls, setSelectedUrls] = useState<string[]>([]);
   const [urlStatusMap, setUrlStatusMap] = useState<URLStatusMap>({});
@@ -103,7 +105,10 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
       }
     });
     setUrlStatusMap(newStatusMap);
-  }, [urlStatusMap]);
+    
+    // SOTA: Notify parent component of URL changes
+    onTargetUrlsChange?.(urls);
+  }, [urlStatusMap, onTargetUrlsChange]);
 
   // Render status indicator for a URL
   const getStatusColor = (status: URLStatus): string => {
