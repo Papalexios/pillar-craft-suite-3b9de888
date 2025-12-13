@@ -106,8 +106,7 @@ const App = () => {
     const [isGeneratingImages, setIsGeneratingImages] = useState(false);
     const [generatedImages, setGeneratedImages] = useState<{ src: string, prompt: string }[]>([]);
     const [imageGenerationError, setImageGenerationError] = useState('');
-    const [gapSuggestions, setGapSuggestions] = useState<550
-        Suggestion[]>([]);
+    const [gapSuggestions, setGapSuggestions] = useState<GapAnalysisSuggestion[]>([]);
     const [isAnalyzingGaps, setIsAnalyzingGaps] = useState(false);
     const [items, dispatch] = useReducer(itemsReducer, []);
     const [isGenerating, setIsGenerating] = useState(false);
