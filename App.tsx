@@ -19,6 +19,7 @@ import { fetchWithProxies, smartCrawl } from './contentUtils';
 import { listNeuronProjects, NeuronProject } from './neuronwriter';
 // @ts-ignore
 import mermaid from 'mermaid';
+import { AutonomousGodMode } from './src/AutonomousGodMode';
 
 console.log("🚀 SOTA ENGINE V2.6 - BULK PLANNER RESTORED");
 
@@ -105,7 +106,8 @@ const App = () => {
     const [isGeneratingImages, setIsGeneratingImages] = useState(false);
     const [generatedImages, setGeneratedImages] = useState<{ src: string, prompt: string }[]>([]);
     const [imageGenerationError, setImageGenerationError] = useState('');
-    const [gapSuggestions, setGapSuggestions] = useState<GapAnalysisSuggestion[]>([]);
+    const [gapSuggestions, setGapSuggestions] = useState<550
+        Suggestion[]>([]);
     const [isAnalyzingGaps, setIsAnalyzingGaps] = useState(false);
     const [items, dispatch] = useReducer(itemsReducer, []);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -583,7 +585,10 @@ const App = () => {
                                 <div className="tabs" role="tablist">
                                     <button className={`tab-btn ${contentMode === 'bulk' ? 'active' : ''}`} onClick={() => setContentMode('bulk')} role="tab">Bulk Content Planner</button>
                                     <button className={`tab-btn ${contentMode === 'single' ? 'active' : ''}`} onClick={() => setContentMode('single')} role="tab">Single Article</button>
-                                    <button className={`tab-btn ${contentMode === 'gapAnalysis' ? 'active' : ''}`} onClick={() => setContentMode('gapAnalysis')} role="tab">Gap Analysis (God Mode)</button>
+                                    <button className={`tab-btn ${contentMode === 'gapAnalysis' ? 'active' : ''}`} onClick={() => setContentMode('740
+                                                                                                                                                 620
+                                    610
+                                    ')} role="tab">Gap Analysis (God Mode)</button>
                                     <button className={`tab-btn ${contentMode === 'refresh' ? 'active' : ''}`} onClick={() => setContentMode('refresh')} role="tab">Quick Refresh & Validate</button>
                                     <button className={`tab-btn ${contentMode === 'hub' ? 'active' : ''}`} onClick={() => setContentMode('hub')} role="tab">Content Hub</button>
                                     <button className={`tab-btn ${contentMode === 'imageGenerator' ? 'active' : ''}`} onClick={() => setContentMode('imageGenerator')} role="tab">Image Generator</button>
@@ -670,6 +675,7 @@ const App = () => {
                                                         </button>
                                                     )}
                                                 </div>
+                                                      <AutonomousGodMode isGodModeActive={isGodMode} onStatusUpdate={(msg) => setGodModeLogs(prev => [msg, ...prev].slice(0, 50))} />
 
                                                 {wpDiagnostics && (
                                                     <div style={{
