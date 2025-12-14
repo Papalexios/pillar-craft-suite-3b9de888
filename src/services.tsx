@@ -1162,62 +1162,6 @@ export class MaintenanceEngine {
                     const improvedText = await memoizedCallAI(
                         apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel,
                         'dom_content_polisher',
-                        [originalText, [page.title]],
-                        'text'
-                    );
-
-                    const cleanText = surgicalSanitizer(improvedText).trim();
-
-                    if (cleanText && cleanText.length > 40 && cleanText !== originalText) {
-                        const hasLinks = originalHTML.includes('<a ');
-                        const hasBold = originalHTML.includes('<strong>') || originalHTML.includes('<b>');
-
-                        if (hasLinks || hasBold) {
-                            continue;
-                        }
-
-                        node.textContent = cleanText;
-                        changesMade++;
-                        consecutiveErrors = 0;
-                    }
-                } catch (e: any) {
-                    consecutiveErrors++;
-                    this.logCallback(`⚠️ AI Error (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}): ${e.message}`);
-
-                    if (e.message && e.message.includes('not initialized')) {
-                        this.logCallback(`❌ FATAL: API Client error detected. Stopping optimization.`);
-                        break;
-                    }
-
-                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                        this.logCallback(`❌ Too many consecutive errors (${MAX_CONSECUTIVE_ERRORS}). Stopping optimization.`);
-                        break;
-                    }
-                }
-                await this.sleep(600);
-            }
-
-            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) break;
-        }
-
-        if (changesMade > 0 || schemaInjected) {
-            this.logCallback(`💾 Saving ${changesMade} text updates + Schema...`);
-            const updatedHtml = body.innerHTML;
-
-            const publishResult = await publishItemToWordPress(
-                {
-                    id: page.id, title: page.title, type: 'refresh', status: 'generating', statusText: 'Updating',
-                    generatedContent: {
-                        ...normalizeGeneratedContent({}, page.title),
-                        content: updatedHtml,
-                        slug: page.slug,
-                        isFullSurgicalRewrite: true,
-                        surgicalSnippets: undefined
-                    },
-                    crawledContent: null, originalUrl: page.id
-                },
-                localStorage.getItem('wpPassword') || '', 'publish', fetchWordPressWithRetry, wpConfig
-            );
 
             if (publishResult.success) {
                 this.logCallback(`✅ SUCCESS|${page.title}|${publishResult.link || page.id}`);
@@ -1436,3 +1380,55 @@ export const generateContent = {
         }, 1, (c, t) => onProgress({ current: c, total: t }), () => shouldStop().current.size > 0);
     }
 };
+
+private async getPrioritizedPages(context: GenerationContext): Promise<SitemapPage[]> {
+    const now = Date.now();
+    const targetUrls = this.getUserTargetUrls();
+    const targetNormSet = new Set(targetUrls.map(u => this.normalizeUrl(u)));
+    
+    const isTarget = (p: SitemapPage) => targetNormSet.has(this.normalizeUrl(p.id));
+    
+    const candidates = [...context.existingPages].filter(p => {
+        if (isTarget(p)) return true;
+        const lastProcessed = localStorage.getItem(`sota_last_proc_${p.id}`);
+        if (!lastProcessed) return true;
+        const hoursSince = (now - parseInt(lastProcessed, 10)) / (1000 * 60 * 60);
+        return hoursSince > 24;
+    });
+    
+    const byNorm = new Map(candidates.map(p => [this.normalizeUrl(p.id), p] as const));
+    const prioritized: SitemapPage[] = [];
+    const used = new Set<string>();
+    
+    for (const url of targetUrls) {
+        const norm = this.normalizeUrl(url);
+        const page = byNorm.get(norm) || {
+            id: url,
+            title: url,
+            slug: extractSlugFromUrl(url),
+            lastMod: null,
+            wordCount: null,
+            crawledContent: null,
+            healthScore: null,
+            updatePriority: 'Critical',
+            justification: 'User-selected target URL (URL Targeting Engine).',
+            daysOld: 999,
+            isStale: true,
+            publishedState: 'none',
+            status: 'idle',
+            analysis: null
+        };
+        
+        if (!used.has(norm)) {
+            used.add(norm);
+            prioritized.push(page as SitemapPage);
+        }
+    }
+    
+    const rest = candidates
+        .filter(p => !used.has(this.normalizeUrl(p.id)))
+        .sort((a, b) => (b.daysOld || 0) - (a.daysOld || 0));
+    
+    this.logCallback(`🎯 Targets loaded: ${targetUrls.length}. Queue size: ${prioritized.length + rest.length}`);
+    return [...prioritized, ...rest];
+}
