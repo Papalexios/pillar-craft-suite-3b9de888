@@ -3,7 +3,29 @@ import React from "react";
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
-import { NeuronAnalysisResult } from "./neuronwriter";
+
+export interface NeuronProject {
+    project: string;
+    name: string;
+    language: string;
+    engine: string;
+    domain?: string;
+}
+
+export interface NeuronAnalysisResult {
+    status: string;
+    terms_txt?: {
+        title: string;
+        h1: string;
+        h2: string;
+        content_basic: string;
+        content_extended: string;
+    };
+    metrics?: {
+        word_count: { target: number };
+    };
+    competitors?: any[];
+}
 
 export interface NeuronConfig {
     apiKey: string;

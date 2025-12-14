@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { Buffer } from 'buffer';
 import App, { SotaErrorBoundary } from './App';
-import './index.css';
+import '../index.css';
 
 // SOTA FIX: Polyfill Buffer and Global for Browser Compatibility
 // @ts-ignore
