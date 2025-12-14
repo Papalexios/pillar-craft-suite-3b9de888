@@ -10,7 +10,7 @@ interface URLStatusMap {
 interface AutonomousGodModeProps {
   isGodModeActive: boolean;
   onStatusUpdate?: (status: string) => void;
-  onTargetUrlsChange?: (urls: string[]) => void; // SOTA: Expose to parent
+  onTargetUrlsChange?: (urls: string[]) => void;
 }
 
 /**
@@ -33,6 +33,7 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingQueue, setProcessingQueue] = useState<string[]>([]);
   const [completedUrls, setCompletedUrls] = useState<Set<string>>(new Set());
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
 
   // Priority ranking system for URLs
   const getPriorityRank = useCallback((status: URLStatus): number => {
@@ -59,6 +60,7 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
     if (!isGodModeActive || selectedUrls.length === 0) return;
 
     setIsProcessing(true);
+    setCurrentUrl(null);
     const sorted = getSortedUrlsByPriority(selectedUrls);
     setProcessingQueue(sorted);
 
@@ -66,7 +68,7 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
       if (completedUrls.has(url)) continue;
 
       try {
-        // Simulate autonomous processing (in production, call your optimization service)
+        setCurrentUrl(url);
         onStatusUpdate?.(`Processing: ${url}`);
 
         // In production: await optimizeUrlWithGodMode(url);
@@ -84,6 +86,7 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
     }
 
     setIsProcessing(false);
+    setCurrentUrl(null);
   }, [isGodModeActive, selectedUrls, completedUrls, getSortedUrlsByPriority, onStatusUpdate]);
 
   // Auto-start processing when God Mode is activated
@@ -131,8 +134,6 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
     return iconMap[status];
   };
 
-  
-
   // LOAD USER TARGET URLs FROM localStorage ON COMPONENT MOUNT
   useEffect(() => {
     try {
@@ -140,12 +141,24 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
       if (storedUrls) {
         const urls = JSON.parse(storedUrls);
         if (Array.isArray(urls) && urls.length > 0) {
-setSelectedUrls(urls);        }
+          setSelectedUrls(urls);
+          setCompletedUrls(new Set());
+          // Initialize status map for loaded URLs
+          setUrlStatusMap(prev => {
+            const next = { ...prev };
+            urls.forEach(u => {
+              if (!next[u]) next[u] = 'healthy';
+            });
+            return next;
+          });
+          // Notify parent immediately on mount
+          onTargetUrlsChange?.(urls);
+        }
       }
     } catch (e) {
       console.error('Failed to load godModeUrls:', e);
     }
-  }, []);
+  }, [onTargetUrlsChange]);
 
   return (
     <div style={{
@@ -211,7 +224,7 @@ setSelectedUrls(urls);        }
             {processingQueue.map((url) => {
               const status = urlStatusMap[url] || 'healthy';
               const isCompleted = completedUrls.has(url);
-              const isCurrently = processingQueue[0] === url && isProcessing;
+              const isCurrently = currentUrl === url && isProcessing;
 
               return (
                 <div
