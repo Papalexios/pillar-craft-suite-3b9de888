@@ -140,8 +140,7 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
       if (storedUrls) {
         const urls = JSON.parse(storedUrls);
         if (Array.isArray(urls) && urls.length > 0) {
-          onTargetUrlsChange?.(urls);
-        }
+setSelectedUrls(urls);        }
       }
     } catch (e) {
       console.error('Failed to load godModeUrls:', e);
