@@ -1,0 +1,99 @@
+name: Apply God Mode SOTA Fixes
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fixes:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Apply URL targeting fix
+        run: |
+          sed -i '1165,1220d' src/services.tsx
+          
+          cat >> src/services.tsx << 'EOF'
+          
+          private async getPrioritizedPages(context: GenerationContext): Promise<SitemapPage[]> {
+              const now = Date.now();
+              const targetUrls = this.getUserTargetUrls();
+              const targetNormSet = new Set(targetUrls.map(u => this.normalizeUrl(u)));
+              
+              const isTarget = (p: SitemapPage) => targetNormSet.has(this.normalizeUrl(p.id));
+              
+              const candidates = [...context.existingPages].filter(p => {
+                  if (isTarget(p)) return true;
+                  const lastProcessed = localStorage.getItem(`sota_last_proc_${p.id}`);
+                  if (!lastProcessed) return true;
+                  const hoursSince = (now - parseInt(lastProcessed, 10)) / (1000 * 60 * 60);
+                  return hoursSince > 24;
+              });
+              
+              const byNorm = new Map(candidates.map(p => [this.normalizeUrl(p.id), p] as const));
+              const prioritized: SitemapPage[] = [];
+              const used = new Set<string>();
+              
+              for (const url of targetUrls) {
+                  const norm = this.normalizeUrl(url);
+                  const page = byNorm.get(norm) || {
+                      id: url,
+                      title: url,
+                      slug: extractSlugFromUrl(url),
+                      lastMod: null,
+                      wordCount: null,
+                      crawledContent: null,
+                      healthScore: null,
+                      updatePriority: 'Critical',
+                      justification: 'User-selected target URL (URL Targeting Engine).',
+                      daysOld: 999,
+                      isStale: true,
+                      publishedState: 'none',
+                      status: 'idle',
+                      analysis: null
+                  };
+                  
+                  if (!used.has(norm)) {
+                      used.add(norm);
+                      prioritized.push(page as SitemapPage);
+                  }
+              }
+              
+              const rest = candidates
+                  .filter(p => !used.has(this.normalizeUrl(p.id)))
+                  .sort((a, b) => (b.daysOld || 0) - (a.daysOld || 0));
+              
+              this.logCallback(`🎯 Targets loaded: ${targetUrls.length}. Queue size: ${prioritized.length + rest.length}`);
+              return [...prioritized, ...rest];
+          }
+          EOF
+          
+      - name: Add references injection
+        run: |
+          sed -i '/const updatedHtml = body.innerHTML;/i\
+          try {\
+              const existing = body.querySelector(".sota-references-section");\
+              if (existing) existing.remove();\
+              const referencesHtml = await fetchVerifiedReferences(page.title, context.serperApiKey, wpConfig.url);\
+              if (referencesHtml) {\
+                  const wrap = doc.createElement("div");\
+                  wrap.innerHTML = referencesHtml;\
+                  body.appendChild(wrap);\
+                  this.logCallback("✅ References added");\
+              }\
+          } catch (e: any) {\
+              this.logCallback(`⚠️ References failed: ${e?.message}`);\
+          }' src/services.tsx
+          
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/services.tsx
+          git commit -m "fix: God Mode targets-first + verified references injection"
+          git push
