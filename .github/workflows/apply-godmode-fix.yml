@@ -14,13 +14,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         
-      - name: Apply URL targeting fix
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Apply fixes using Node script
         run: |
-          sed -i '1165,1220d' src/services.tsx
+          node << 'SCRIPT'
+          const fs = require('fs');
+          const path = './src/services.tsx';
+          let content = fs.readFileSync(path, 'utf8');
           
-          cat >> src/services.tsx << 'EOF'
+          // Fix 1: Replace getPrioritizedPages method
+          const oldMethod = /private async getPrioritizedPages\(context: GenerationContext\): Promise<SitemapPage\[\]> \{[\s\S]*?return \[\.\.\.prioritized, \.\.\.rest\];[\s\S]*?\}/m;
           
-          private async getPrioritizedPages(context: GenerationContext): Promise<SitemapPage[]> {
+          const newMethod = `private async getPrioritizedPages(context: GenerationContext): Promise<SitemapPage[]> {
               const now = Date.now();
               const targetUrls = this.getUserTargetUrls();
               const targetNormSet = new Set(targetUrls.map(u => this.normalizeUrl(u)));
@@ -29,7 +38,7 @@ jobs:
               
               const candidates = [...context.existingPages].filter(p => {
                   if (isTarget(p)) return true;
-                  const lastProcessed = localStorage.getItem(`sota_last_proc_${p.id}`);
+                  const lastProcessed = localStorage.getItem(\`sota_last_proc_\${p.id}\`);
                   if (!lastProcessed) return true;
                   const hoursSince = (now - parseInt(lastProcessed, 10)) / (1000 * 60 * 60);
                   return hoursSince > 24;
@@ -68,32 +77,44 @@ jobs:
                   .filter(p => !used.has(this.normalizeUrl(p.id)))
                   .sort((a, b) => (b.daysOld || 0) - (a.daysOld || 0));
               
-              this.logCallback(`🎯 Targets loaded: ${targetUrls.length}. Queue size: ${prioritized.length + rest.length}`);
+              this.logCallback(\`🎯 Targets loaded: \${targetUrls.length}. Queue size: \${prioritized.length + rest.length}\`);
               return [...prioritized, ...rest];
-          }
-          EOF
+          }`;
           
-      - name: Add references injection
-        run: |
-          sed -i '/const updatedHtml = body.innerHTML;/i\
-          try {\
-              const existing = body.querySelector(".sota-references-section");\
-              if (existing) existing.remove();\
-              const referencesHtml = await fetchVerifiedReferences(page.title, context.serperApiKey, wpConfig.url);\
-              if (referencesHtml) {\
-                  const wrap = doc.createElement("div");\
-                  wrap.innerHTML = referencesHtml;\
-                  body.appendChild(wrap);\
-                  this.logCallback("✅ References added");\
-              }\
-          } catch (e: any) {\
-              this.logCallback(`⚠️ References failed: ${e?.message}`);\
-          }' src/services.tsx
+          content = content.replace(oldMethod, newMethod);
+          
+          // Fix 2: Add references injection before updatedHtml
+          const referencesInjection = `
+          // SOTA: Inject verified references
+          try {
+              const existing = body.querySelector('.sota-references-section');
+              if (existing) existing.remove();
+              const referencesHtml = await fetchVerifiedReferences(page.title, context.serperApiKey, wpConfig.url);
+              if (referencesHtml) {
+                  const wrap = doc.createElement('div');
+                  wrap.innerHTML = referencesHtml;
+                  body.appendChild(wrap);
+                  this.logCallback('✅ References added');
+              }
+          } catch (e: any) {
+              this.logCallback(\`⚠️ References failed: \${e?.message}\`);
+          }
+          
+          const updatedHtml = body.innerHTML;`;
+          
+          content = content.replace(
+              /const updatedHtml = body\.innerHTML;/,
+              referencesInjection
+          );
+          
+          fs.writeFileSync(path, content, 'utf8');
+          console.log('✅ Fixes applied successfully!');
+          SCRIPT
           
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add src/services.tsx
-          git commit -m "fix: God Mode targets-first + verified references injection"
+          git diff --staged --quiet || git commit -m "fix: God Mode targets-first + verified references injection"
           git push
