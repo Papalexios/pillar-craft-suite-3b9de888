@@ -965,15 +965,12 @@ export class MaintenanceEngine {
     }
 
     // SOTA: TRUE URL PRIORITIZATION
-    private async getPrioritizedPages(context: GenerationContext): Promise<SitemapPage[]> {
+        private async getPrioritizedPages(context: GenerationContext): Promise<SitemapPage[]> {
         const now = Date.now();
         const userTargets = this.getUserTargetUrls();
         const targetSet = new Set(userTargets.map(u => this.normalizeUrl(u)));
 
         const isTargetPage = (p: SitemapPage): boolean => targetSet.has(this.normalizeUrl(p.id));
-
-        const targetCooldownHours = 2;
-        const sitemapCooldownHours = 24;
 
         let candidates = [...context.existingPages];
 
@@ -987,7 +984,6 @@ export class MaintenanceEngine {
             return hoursSince > 24;
         });
 
-
         const prioritized: SitemapPage[] = [];
         const used = new Set<string>();
 
@@ -1024,76 +1020,8 @@ export class MaintenanceEngine {
             .filter(p => !used.has(this.normalizeUrl(p.id)))
             .sort((a, b) => (b.daysOld || 0) - (a.daysOld || 0));
 
+        this.logCallback(`🎯 Targets loaded: ${userTargets.length}. Queue size: ${prioritized.length + rest.length}`);
         return [...prioritized, ...rest];
-    }`);
-            if (!lastProcessed) return true;
-            const hoursSince = (now - parseInt(lastProcessed)) / (1000 * 60 * 60);
-            return hoursSince > (isTargetPage(p) ? targetCooldownHours : sitemapCooldownHours);
-        });
-
-        const prioritized: SitemapPage[] = [];
-        const used = new Set<string>();
-
-        if (userTargets.length > 0) {
-            const byNorm = new Map(candidates.map(p => [this.normalizeUrl(p.id), p] as const));
-
-            for (const url of userTargets) {
-                const norm = this.normalizeUrl(url);
-                const page = byNorm.get(norm) || {
-                    id: url,
-                    title: url,
-                    slug: extractSlugFromUrl(url),
-                    lastMod: null,
-                    wordCount: null,
-                    crawledContent: null,
-                    healthScore: null,
-                    updatePriority: 'Critical',
-                    justification: 'User-selected target URL (URL Targeting Engine).',
-                    daysOld: 999,
-                    isStale: true,
-                    publishedState: 'none',
-                    status: 'idle',
-                    analysis: null
-                };
-
-                if (!used.has(norm)) {
-                    used.add(norm);
-                    prioritized.push(page as SitemapPage);
-                }
-            }
-        }
-
-        const rest = candidates
-            .filter(p => !used.has(this.normalizeUrl(p.id)))
-            .sort((a, b) => (b.daysOld || 0) - (a.daysOld || 0));
-
-        return [...prioritized, ...rest];
-    }`);
-            if (!lastProcessed) return true;
-            const hoursSince = (Date.now() - parseInt(lastProcessed)) / (1000 * 60 * 60);
-            return hoursSince > 24; 
-        });
-
-        // SOTA FIX: PRIORITIZE USER-SELECTED URLS FIRST!
-        if (this.priorityUrls.length > 0) {
-            const priorityPages = candidates.filter(p => this.priorityUrls.includes(p.id));
-            const otherPages = candidates.filter(p => !this.priorityUrls.includes(p.id));
-            
-            // Sort priority pages by user's order
-            priorityPages.sort((a, b) => {
-                const indexA = this.priorityUrls.indexOf(a.id);
-                const indexB = this.priorityUrls.indexOf(b.id);
-                return indexA - indexB;
-            });
-            
-            // Sort other pages by age
-            otherPages.sort((a, b) => (b.daysOld || 0) - (a.daysOld || 0));
-            
-            return [...priorityPages, ...otherPages];
-        }
-
-        // Fallback: Sort by age if no priority URLs
-        return candidates.sort((a, b) => (b.daysOld || 0) - (a.daysOld || 0)); 
     }
 
     private async optimizeDOMSurgically(page: SitemapPage, context: GenerationContext) {
