@@ -111,7 +111,7 @@ jobs:
           console.log('✅ Fixes applied successfully!');
           SCRIPT
           
-            - name: Commit and push
+      - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -131,4 +131,3 @@ jobs:
           
           # Push changes
           git push
-
