@@ -1381,20 +1381,7 @@ export const generateContent = {
     }
 };
 
-private async getPrioritizedPages(context: GenerationContext): Promise<SitemapPage[]> {
-    const now = Date.now();
-    const targetUrls = this.getUserTargetUrls();
-    const targetNormSet = new Set(targetUrls.map(u => this.normalizeUrl(u)));
-    
-    const isTarget = (p: SitemapPage) => targetNormSet.has(this.normalizeUrl(p.id));
-    
-    const candidates = [...context.existingPages].filter(p => {
-        if (isTarget(p)) return true;
-        const lastProcessed = localStorage.getItem(`sota_last_proc_${p.id}`);
-        if (!lastProcessed) return true;
-        const hoursSince = (now - parseInt(lastProcessed, 10)) / (1000 * 60 * 60);
-        return hoursSince > 24;
-    });
+);
     
     const byNorm = new Map(candidates.map(p => [this.normalizeUrl(p.id), p] as const));
     const prioritized: SitemapPage[] = [];
