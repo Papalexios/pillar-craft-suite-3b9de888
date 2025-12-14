@@ -469,7 +469,7 @@ const discoverPostIdAndEndpoint = async (url: string): Promise<{ id: number, end
 };
 
 const generateAndValidateReferences = async (keyword: string, metaDescription: string, serperApiKey: string, apiClients?: ApiClients, selectedModel?: string) => {
-    return { html: await fetchVerifiedReferences(keyword, serperApiKey, undefined, apiClients, selectedModel), data: [] };
+    return { html: await fetchVerifiedReferences(keyword, serperApiKey, undefined), data: [] };
 };
 
 const _internalCallAI = async (
@@ -819,14 +819,14 @@ export const publishItemToWordPress = async (
 };
 
 // ============================================================================
-// SOTA MAINTENANCE ENGINE: USER URL PRIORITIZATION + SMART SKIP
+// SOTA MAINTENANCE ENGINE: USER URL PRIORITIZATION + SMART SKIP + REFERENCES
 // ============================================================================
 
 export class MaintenanceEngine {
     private isRunning: boolean = false;
     public logCallback: (msg: string) => void;
     private currentContext: GenerationContext | null = null;
-    private priorityUrls: string[] = []; // SOTA: User-selected target URLs
+    private priorityUrls: string[] = [];
 
     constructor(logCallback: (msg: string) => void) {
         this.logCallback = logCallback;
@@ -836,7 +836,6 @@ export class MaintenanceEngine {
         this.currentContext = context;
     }
 
-    // SOTA: Set priority URLs from user selection
     setPriorityUrls(urls: string[]) {
         this.priorityUrls = urls;
         this.logCallback(`🎯 Priority URLs Updated: ${urls.length} targets set`);
@@ -854,7 +853,6 @@ export class MaintenanceEngine {
         this.isRunning = true;
         this.logCallback("🚀 God Mode Activated: Engine Cold Start...");
 
-        // CRITICAL: Validate API clients before starting
         if (!context.apiClients || !context.apiClients[context.selectedModel as keyof typeof context.apiClients]) {
             this.logCallback("❌ CRITICAL ERROR: AI API Client not initialized!");
             this.logCallback(`🔧 REQUIRED: Configure ${context.selectedModel.toUpperCase()} API key in Settings`);
@@ -863,7 +861,6 @@ export class MaintenanceEngine {
             return;
         }
 
-        // Check Serper quota
         const quota = checkSerperQuota();
         if (quota.warning) {
             this.logCallback(quota.warning);
@@ -895,7 +892,6 @@ export class MaintenanceEngine {
                 }
                 const targetPage = pages[0];
                 
-                // SOTA SMART SKIP: Check if Last Modified Date is older than our last optimization
                 const lastOptimization = localStorage.getItem(`sota_last_proc_${targetPage.id}`);
                 const sitemapDate = targetPage.lastMod ? new Date(targetPage.lastMod).getTime() : 0;
                 const lastOptDate = lastOptimization ? parseInt(lastOptimization) : 0;
@@ -948,7 +944,7 @@ export class MaintenanceEngine {
         }
     }
 
-    private normalizeUrl(u: string): string {
+    private normalizeUrl(u: string): string => {
         try {
             const urlObj = new URL(u);
             urlObj.hash = '';
@@ -964,8 +960,7 @@ export class MaintenanceEngine {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    // SOTA: TRUE URL PRIORITIZATION
-        private async getPrioritizedPages(context: GenerationContext): Promise<SitemapPage[]> {
+    private async getPrioritizedPages(context: GenerationContext): Promise<SitemapPage[]> {
         const now = Date.now();
         const userTargets = this.getUserTargetUrls();
         const targetSet = new Set(userTargets.map(u => this.normalizeUrl(u)));
@@ -974,9 +969,8 @@ export class MaintenanceEngine {
 
         let candidates = [...context.existingPages];
 
-        // CRITICAL FIX: NO COOLDOWN FOR USER TARGETS
         candidates = candidates.filter(p => {
-            if (isTargetPage(p)) return true; // User targets ALWAYS run
+            if (isTargetPage(p)) return true;
             
             const lastProcessed = localStorage.getItem(`sota_last_proc_${p.id}`);
             if (!lastProcessed) return true;
@@ -1025,7 +1019,7 @@ export class MaintenanceEngine {
     }
 
     private async optimizeDOMSurgically(page: SitemapPage, context: GenerationContext) {
-        const { wpConfig, apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel } = context;
+        const { wpConfig, apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel, serperApiKey } = context;
         this.logCallback(`📥 Fetching LIVE content for: ${page.title}...`);
 
         let rawContent = await this.fetchRawContent(page, wpConfig);
@@ -1039,10 +1033,23 @@ export class MaintenanceEngine {
         const body = doc.body;
 
         const hasSchema = rawContent.includes('application/ld+json');
+        const hasReferences = rawContent.includes('sota-references-section');
         let schemaInjected = false;
+        let referencesHtml = '';
+
         if (!hasSchema) {
             this.logCallback("🔍 No Schema detected. Injecting High-Performance Schema...");
             schemaInjected = true;
+        }
+
+        if (!hasReferences) {
+            this.logCallback("📚 Fetching verified references from Serper API...");
+            referencesHtml = await fetchVerifiedReferences(page.title, serperApiKey, wpConfig.url);
+            if (referencesHtml) {
+                this.logCallback("✅ References validated and ready to inject.");
+            } else {
+                this.logCallback("⚠️ No valid references found (may be quota exhausted or no relevant sources).");
+            }
         }
 
         const textNodes = Array.from(body.querySelectorAll('p, li'));
@@ -1090,6 +1097,79 @@ export class MaintenanceEngine {
                     const improvedText = await memoizedCallAI(
                         apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel,
                         'dom_content_polisher',
+                        [originalHTML, page.title],
+                        'html'
+                    );
+
+                    const sanitized = surgicalSanitizer(improvedText);
+
+                    if (sanitized.length > originalHTML.length * 0.6 && sanitized !== originalHTML) {
+                        node.innerHTML = sanitized;
+                        changesMade++;
+                        consecutiveErrors = 0;
+                        this.logCallback(`✅ Updated (${changesMade} changes total)`);
+                    } else {
+                        this.logCallback(`⏭️ Skipped (no improvement)`);
+                    }
+
+                } catch (error: any) {
+                    consecutiveErrors++;
+                    this.logCallback(`❌ Polish error: ${error.message}`);
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        this.logCallback("🛑 Too many consecutive errors. Stopping polish loop.");
+                        break;
+                    }
+                }
+            }
+
+            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) break;
+        }
+
+        this.logCallback(`✅ DOM Polish Complete: ${changesMade} improvements made.`);
+
+        if (changesMade > 0 || schemaInjected || referencesHtml) {
+            let finalHtml = body.innerHTML;
+
+            if (referencesHtml && !hasReferences) {
+                finalHtml += referencesHtml;
+                this.logCallback("📚 References section injected into content.");
+            }
+
+            if (schemaInjected) {
+                const schemaGenerator = lazySchemaGeneration(
+                    { title: page.title, slug: page.slug || '' } as any,
+                    wpConfig,
+                    context.siteInfo,
+                    geoTargeting
+                );
+                const schemaMarkup = schemaGenerator();
+                finalHtml += schemaMarkup;
+                this.logCallback("🔍 Schema.org markup injected.");
+            }
+
+            this.logCallback("📤 Posting optimized content to WordPress...");
+
+            const password = localStorage.getItem('wpPassword') || '';
+            const publishResult = await publishItemToWordPress(
+                {
+                    id: page.id,
+                    title: page.title,
+                    type: 'refresh',
+                    originalUrl: page.id,
+                    crawledContent: rawContent,
+                    generatedContent: {
+                        title: page.title,
+                        content: finalHtml,
+                        metaDescription: page.title,
+                        slug: page.slug || extractSlugFromUrl(page.id),
+                        isFullSurgicalRewrite: true
+                    } as any
+                } as ContentItem,
+                password,
+                'publish',
+                fetchWordPressWithRetry,
+                wpConfig
+            );
 
             if (publishResult.success) {
                 this.logCallback(`✅ SUCCESS|${page.title}|${publishResult.link || page.id}`);
@@ -1098,7 +1178,7 @@ export class MaintenanceEngine {
                 this.logCallback(`❌ Update Failed: ${publishResult.message}`);
             }
         } else {
-            this.logCallback("⚠️ No optimization applied (0 changes, no schema). NOT marking as complete.");
+            this.logCallback("⚠️ No optimization applied (0 changes, no schema, no references). NOT marking as complete.");
             this.logCallback("💡 This page will be retried on next cycle.");
         }
     }
@@ -1157,7 +1237,7 @@ export const generateContent = {
         const [paaQuestions, semanticKeywordsResponse, verifiedReferencesHtml] = await Promise.all([
             fetchPAA(item.title, serperApiKey),
             memoizedCallAI(context.apiClients, context.selectedModel, context.geoTargeting, context.openrouterModels, context.selectedGroqModel, 'semantic_keyword_generator', [item.title, context.geoTargeting.enabled ? context.geoTargeting.location : null], 'json'),
-            fetchVerifiedReferences(item.title, serperApiKey, context.wpConfig.url, context.apiClients, context.selectedModel)
+            fetchVerifiedReferences(item.title, serperApiKey, context.wpConfig.url)
         ]);
         const semanticKeywordsRaw = await parseJsonWithAiRepair(semanticKeywordsResponse, aiRepairer);
         const semanticKeywords = semanticKeywordsRaw?.semanticKeywords?.map((k: any) => typeof k === 'object' ? k.keyword : k) || [];
@@ -1308,42 +1388,3 @@ export const generateContent = {
         }, 1, (c, t) => onProgress({ current: c, total: t }), () => shouldStop().current.size > 0);
     }
 };
-
-);
-    
-    const byNorm = new Map(candidates.map(p => [this.normalizeUrl(p.id), p] as const));
-    const prioritized: SitemapPage[] = [];
-    const used = new Set<string>();
-    
-    for (const url of targetUrls) {
-        const norm = this.normalizeUrl(url);
-        const page = byNorm.get(norm) || {
-            id: url,
-            title: url,
-            slug: extractSlugFromUrl(url),
-            lastMod: null,
-            wordCount: null,
-            crawledContent: null,
-            healthScore: null,
-            updatePriority: 'Critical',
-            justification: 'User-selected target URL (URL Targeting Engine).',
-            daysOld: 999,
-            isStale: true,
-            publishedState: 'none',
-            status: 'idle',
-            analysis: null
-        };
-        
-        if (!used.has(norm)) {
-            used.add(norm);
-            prioritized.push(page as SitemapPage);
-        }
-    }
-    
-    const rest = candidates
-        .filter(p => !used.has(this.normalizeUrl(p.id)))
-        .sort((a, b) => (b.daysOld || 0) - (a.daysOld || 0));
-    
-    this.logCallback(`🎯 Targets loaded: ${targetUrls.length}. Queue size: ${prioritized.length + rest.length}`);
-    return [...prioritized, ...rest];
-}
