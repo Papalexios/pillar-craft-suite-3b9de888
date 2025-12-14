@@ -1,4 +1,4 @@
-name: Fix Duplicate Methods in services.tsx
+name: Fix Duplicate Methods
 
 on:
   workflow_dispatch:
@@ -9,43 +9,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Remove duplicate getPrioritizedPages methods
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Run fix script
         run: |
-          # This script finds and removes the duplicate methods
-          # Keep only the first occurrence (lines 1231-1287)
-          
-          # Create backup
-          cp src/services.tsx src/services.tsx.backup
-          
-          # Use awk to remove duplicate blocks
-          # The correct version ends with "return [...prioritized, ...rest];"
-          # followed by a closing brace
-          
-          awk '
-          BEGIN { inside_dup = 0; dup_count = 0; keep = 1 }
-          /private async getPrioritizedPages\(context: GenerationContext\): Promise<SitemapPage\[\]>/ {
-            dup_count++
-            if (dup_count > 1) {
-              inside_dup = 1
-              keep = 0
-            }
-          }
-          /private async optimizeDOMSurgically/ {
-            if (inside_dup) {
-              inside_dup = 0
-              keep = 1
-            }
-          }
-          keep { print }
-          ' src/services.tsx > src/services.tsx.fixed
-          
-          # Replace original with fixed version
-          mv src/services.tsx.fixed src/services.tsx
-          
-      - name: Commit fix
+          python scripts/fix-duplicate-methods.py
+      
+      - name: Commit and push
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add src/services.tsx
-          git commit -m "fix: remove duplicate getPrioritizedPages methods" || echo "No changes"
-          git push
+          if git diff --staged --quiet; then
+            echo "No changes needed"
+          else
+            git commit -m "fix: remove duplicate getPrioritizedPages methods"
+            git push
+          fi
