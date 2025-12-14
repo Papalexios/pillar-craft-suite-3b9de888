@@ -111,10 +111,24 @@ jobs:
           console.log('✅ Fixes applied successfully!');
           SCRIPT
           
-      - name: Commit and push
+            - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add src/services.tsx
-          git diff --staged --quiet || git commit -m "fix: God Mode targets-first + verified references injection"
+          
+          # Check if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          # Commit changes
+          git commit -m "fix: God Mode targets-first + verified references injection"
+          
+          # Pull and rebase to sync with remote
+          git pull --rebase origin main
+          
+          # Push changes
           git push
+
