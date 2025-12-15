@@ -54,8 +54,6 @@ html,
 body {
   width: 100%;
   height: 100%;
-  overflow-x: hidden; /* Prevent horizontal scroll */
-  overflow-y: auto; /* Allow vertical scroll */
 }
 
 body {
@@ -322,16 +320,3 @@ html {
   scroll-behavior: smooth;
 }
 
-/* FIXED: Prevent Setup & Configuration scrolling issues */
-.modal-overlay,
-.dialog-overlay {
-  overflow-y: auto;
-  max-height: 100vh;
-}
-
-.modal-content,
-.dialog-content {
-  max-height: 90vh;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
