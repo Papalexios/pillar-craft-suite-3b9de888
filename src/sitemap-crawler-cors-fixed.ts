@@ -25,7 +25,9 @@ const CORS_PROXIES = [
   (url: string) => url, // Direct (might work for some sites)
   (url: string) => `https://r.jina.ai/${url}`, // Jina AI Reader
   (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, // AllOrigins
-];
+],
+  (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`, // CORS Proxy IO
+  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`, // CodeTabs CORS Proxy;
 
 /**
  * Fetch with CORS fallback strategies
