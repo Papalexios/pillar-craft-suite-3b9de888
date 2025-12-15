@@ -1,750 +1,1090 @@
-import { GoogleGenAI } from "@google/genai";
-import OpenAI from "openai";
-import Anthropic from "@anthropic-ai/sdk";
-import React, { useState, useMemo, useEffect, useCallback, useReducer, useRef, Component, ErrorInfo } from 'react';
-import { generateFullSchema, generateSchemaMarkup } from './schema-generator';
-import { PROMPT_TEMPLATES } from './prompts';
-import { AI_MODELS } from './constants';
-import { itemsReducer } from './state';
-import { callAI, generateContent, generateImageWithFallback, publishItemToWordPress, maintenanceEngine } from './services';
-import {
-    AppFooter, AnalysisModal, BulkPublishModal, ReviewModal, SidebarNav, SkeletonLoader, ApiKeyInput, CheckIcon, XIcon, WordPressEndpointInstructions
-} from './components';
-import { LandingPage } from './LandingPage';
-import {
-    SitemapPage, ContentItem, GeneratedContent, SiteInfo, ExpandedGeoTargeting, ApiClients, WpConfig, NeuronConfig, GapAnalysisSuggestion, GenerationContext, NeuronProject
-} from './types';
-import { callAiWithRetry, debounce, fetchWordPressWithRetry, sanitizeTitle, extractSlugFromUrl, parseJsonWithAiRepair, isNullish, isValidSortKey, processConcurrently } from './utils';
-import { fetchWithProxies, smartCrawl } from './contentUtils';
-import { listNeuronProjects } from './neuronwriter';
-// @ts-ignore
-import mermaid from 'mermaid';
-import { AutonomousGodMode } from './AutonomousGodMode';
+// src/App.tsx
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-console.log("🚀 SOTA ENGINE V2.7 - GOD MODE FULLY INTEGRATED");
-
-interface ErrorBoundaryProps {
-    children?: React.ReactNode;
-}
-
-interface ErrorBoundaryState {
-    hasError: boolean;
-    error: Error | null;
-}
-
-export class SotaErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-    public state: ErrorBoundaryState;
-    public declare props: Readonly<ErrorBoundaryProps>;
-    constructor(props: ErrorBoundaryProps) { super(props); this.state = { hasError: false, error: null }; }
-    static getDerivedStateFromError(error: Error): ErrorBoundaryState { return { hasError: true, error }; }
-    componentDidCatch(error: Error, errorInfo: ErrorInfo) { console.error('SOTA_ERROR_BOUNDARY:', error, errorInfo); }
-    render() {
-        if (this.state.hasError) {
-            return (
-                <div className="sota-error-fallback" style={{ padding: '2rem', textAlign: 'center', color: '#EAEBF2', backgroundColor: '#0A0A0F', height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
-                    <h1 style={{ fontSize: '2rem', marginBottom: '1rem', color: '#F87171' }}>System Critical Error</h1>
-                    <p style={{ color: '#A0A8C2', marginBottom: '2rem', maxWidth: '600px' }}>The application encountered an unexpected state. Please reload.</p>
-                    <button className="btn" onClick={() => { localStorage.removeItem('items'); window.location.reload(); }}>Reset Application</button>
-                </div>
-            );
-        }
-        return this.props.children;
-    }
-}
-
-interface OptimizedLog { title: string; url: string; timestamp: string; }
-
-const App = () => {
-    const [showLanding, setShowLanding] = useState(() => {
-        const hasSeenLanding = localStorage.getItem('hasSeenLanding');
-        return hasSeenLanding !== 'true';
-    });
-    const [activeView, setActiveView] = useState('setup');
-    const [apiKeys, setApiKeys] = useState(() => {
-        const saved = localStorage.getItem('apiKeys');
-        const defaults = { openaiApiKey: '', anthropicApiKey: '', openrouterApiKey: '', serperApiKey: '', groqApiKey: '' };
-        try { return saved ? JSON.parse(saved) : defaults; } catch { return defaults; }
-    });
-    const [apiKeyStatus, setApiKeyStatus] = useState({ gemini: 'idle', openai: 'idle', anthropic: 'idle', openrouter: 'idle', serper: 'idle', groq: 'idle' } as Record<string, 'idle' | 'validating' | 'valid' | 'invalid'>);
-    const [editingApiKey, setEditingApiKey] = useState<string | null>(null);
-    const [apiClients, setApiClients] = useState<ApiClients>({ gemini: null, openai: null, anthropic: null, openrouter: null, groq: null });
-    const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('selectedModel') || 'gemini');
-    const [selectedGroqModel, setSelectedGroqModel] = useState(() => localStorage.getItem('selectedGroqModel') || AI_MODELS.GROQ_MODELS[0]);
-    const [openrouterModels, setOpenrouterModels] = useState<string[]>(AI_MODELS.OPENROUTER_DEFAULT);
-    const [geoTargeting, setGeoTargeting] = useState<ExpandedGeoTargeting>(() => {
-        try { return JSON.parse(localStorage.getItem('geoTargeting') || '{"enabled":false,"location":"","region":"","country":"","postalCode":""}'); } catch { return { enabled: false, location: '', region: '', country: '', postalCode: '' }; }
-    });
-    const [useGoogleSearch, setUseGoogleSearch] = useState(false);
-    const [neuronConfig, setNeuronConfig] = useState<NeuronConfig>(() => {
-        try { return JSON.parse(localStorage.getItem('neuronConfig') || '{"apiKey":"","projectId":"","enabled":false}'); } catch { return { apiKey: '', projectId: '', enabled: false }; }
-    });
-    const [neuronProjects, setNeuronProjects] = useState<NeuronProject[]>([]);
-    const [isFetchingNeuronProjects, setIsFetchingNeuronProjects] = useState(false);
-    const [neuronFetchError, setNeuronFetchError] = useState('');
-    const [contentMode, setContentMode] = useState('bulk');
-    const [refreshMode, setRefreshMode] = useState<'single' | 'bulk'>('single');
-    const [topic, setTopic] = useState('');
-    const [primaryKeywords, setPrimaryKeywords] = useState('');
-    const [sitemapUrl, setSitemapUrl] = useState('');
-    const [refreshUrl, setRefreshUrl] = useState('');
-    const [isCrawling, setIsCrawling] = useState(false);
-    const [crawlMessage, setCrawlMessage] = useState('');
-    const [crawlProgress, setCrawlProgress] = useState({ current: 0, total: 0 });
-    const [existingPages, setExistingPages] = useState<SitemapPage[]>(() => {
-        try { return JSON.parse(localStorage.getItem('sitemapPages') || '[]'); } catch { return []; }
-    });
-    const [wpConfig, setWpConfig] = useState<WpConfig>(() => {
-        try { return JSON.parse(localStorage.getItem('wpConfig') || '{"url":"","username":""}'); } catch { return { url: '', username: '' }; }
-    });
-    const [wpPassword, setWpPassword] = useState(() => localStorage.getItem('wpPassword') || '');
-    const [wpEndpointStatus, setWpEndpointStatus] = useState<'idle' | 'verifying' | 'valid' | 'invalid'>('idle');
-    const [isEndpointModalOpen, setIsEndpointModalOpen] = useState(false);
-    const [siteInfo, setSiteInfo] = useState<SiteInfo>(() => {
-        try { return JSON.parse(localStorage.getItem('siteInfo') || '{"orgName":"","orgUrl":"","logoUrl":"","orgSameAs":[],"authorName":"","authorUrl":"","authorSameAs":[]}'); } catch { return { orgName: '', orgUrl: '', logoUrl: '', orgSameAs: [], authorName: '', authorUrl: '', authorSameAs: [] }; }
-    });
-    const [imagePrompt, setImagePrompt] = useState('');
-    const [numImages, setNumImages] = useState(1);
-    const [aspectRatio, setAspectRatio] = useState('1:1');
-    const [isGeneratingImages, setIsGeneratingImages] = useState(false);
-    const [generatedImages, setGeneratedImages] = useState<{ src: string, prompt: string }[]>([]);
-    const [imageGenerationError, setImageGenerationError] = useState('');
-    const [gapSuggestions, setGapSuggestions] = useState<GapAnalysisSuggestion[]>([]);
-    const [isAnalyzingGaps, setIsAnalyzingGaps] = useState(false);
-    const [items, dispatch] = useReducer(itemsReducer, []);
-    const [isGenerating, setIsGenerating] = useState(false);
-    const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0 });
-    const [selectedItems, setSelectedItems] = useState(new Set<string>());
-    const [filter, setFilter] = useState('');
-    const [sortConfig, setSortConfig] = useState({ key: 'title', direction: 'asc' });
-    const [selectedItemForReview, setSelectedItemForReview] = useState<ContentItem | null>(null);
-    const [isBulkPublishModalOpen, setIsBulkPublishModalOpen] = useState(false);
-    const stopGenerationRef = useRef(new Set<string>());
-    const [hubSearchFilter, setHubSearchFilter] = useState('');
-    const [hubStatusFilter, setHubStatusFilter] = useState('All');
-    const [hubSortConfig, setHubSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'default', direction: 'desc' });
-    const [isAnalyzingHealth, setIsAnalyzingHealth] = useState(false);
-    const [healthAnalysisProgress, setHealthAnalysisProgress] = useState({ current: 0, total: 0 });
-    const [selectedHubPages, setSelectedHubPages] = useState(new Set<string>());
-    const [viewingAnalysis, setViewingAnalysis] = useState<SitemapPage | null>(null);
-    const [isBulkAutoPublishing, setIsBulkAutoPublishing] = useState(false);
-    const [bulkAutoPublishProgress, setBulkAutoPublishProgress] = useState({ current: 0, total: 0 });
-    const [bulkPublishLogs, setBulkPublishLogs] = useState<string[]>([]);
-    const [isGodMode, setIsGodMode] = useState(() => localStorage.getItem('sota_god_mode') === 'true');
-    const [godModeLogs, setGodModeLogs] = useState<string[]>([]);
-    const [excludedUrls, setExcludedUrls] = useState<string[]>(() => JSON.parse(localStorage.getItem('excludedUrls') || '[]'));
-    const [excludedCategories, setExcludedCategories] = useState<string[]>(() => JSON.parse(localStorage.getItem('excludedCategories') || '[]'));
-    const [optimizedHistory, setOptimizedHistory] = useState<OptimizedLog[]>([]);
-    const [wpDiagnostics, setWpDiagnostics] = useState<any>(null);
-    const [isRunningDiagnostics, setIsRunningDiagnostics] = useState(false);
-
-    // 🔧 SOTA FIX: Normalized WordPress config for all components
-    const normalizedWpConfig: WpConfig = useMemo(() => ({
-        url: wpConfig.url || '',
-        siteUrl: wpConfig.url?.replace(/\/+$/, '') || '',
-        username: wpConfig.username || '',
-        appPassword: wpPassword || ''
-    }), [wpConfig.url, wpConfig.username, wpPassword]);
-
-    useEffect(() => { mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose', fontFamily: 'Inter' }); }, []);
-    useEffect(() => { if (selectedItemForReview?.generatedContent) setTimeout(() => { mermaid.run({ nodes: document.querySelectorAll('.mermaid') as any }); }, 500); }, [selectedItemForReview]);
-    useEffect(() => { localStorage.setItem('apiKeys', JSON.stringify(apiKeys)); }, [apiKeys]);
-    useEffect(() => { localStorage.setItem('selectedModel', selectedModel); }, [selectedModel]);
-    useEffect(() => { localStorage.setItem('selectedGroqModel', selectedGroqModel); }, [selectedGroqModel]);
-    useEffect(() => { localStorage.setItem('wpConfig', JSON.stringify(wpConfig)); }, [wpConfig]);
-    useEffect(() => { localStorage.setItem('wpPassword', wpPassword); }, [wpPassword]);
-    useEffect(() => { localStorage.setItem('geoTargeting', JSON.stringify(geoTargeting)); }, [geoTargeting]);
-    useEffect(() => { localStorage.setItem('siteInfo', JSON.stringify(siteInfo)); }, [siteInfo]);
-    useEffect(() => { localStorage.setItem('neuronConfig', JSON.stringify(neuronConfig)); }, [neuronConfig]);
-    useEffect(() => { localStorage.setItem('excludedUrls', JSON.stringify(excludedUrls)); }, [excludedUrls]);
-    useEffect(() => { localStorage.setItem('excludedCategories', JSON.stringify(excludedCategories)); }, [excludedCategories]);
-    
-    // 🔧 SOTA FIX: Persist sitemap pages to localStorage
-    useEffect(() => { 
-        localStorage.setItem('sitemapPages', JSON.stringify(existingPages)); 
-    }, [existingPages]);
-
-    const fetchProjectsRef = useRef<string>('');
-    const fetchProjects = useCallback(async (key: string) => {
-        if (!key || key.trim().length < 10) { setNeuronProjects([]); setNeuronFetchError(''); return; }
-        if (fetchProjectsRef.current === key && (neuronProjects.length > 0 || neuronFetchError)) return;
-        setIsFetchingNeuronProjects(true); setNeuronFetchError(''); fetchProjectsRef.current = key;
-        try {
-            const projects = await listNeuronProjects(key);
-            setNeuronProjects(projects);
-            if (projects.length > 0 && !neuronConfig.projectId) setNeuronConfig(prev => ({ ...prev, projectId: projects[0].project }));
-        } catch (err: any) { setNeuronFetchError(err.message || 'Failed to fetch projects'); setNeuronProjects([]); } finally { setIsFetchingNeuronProjects(false); }
-    }, [neuronConfig.projectId, neuronProjects.length, neuronFetchError]);
-
-    useEffect(() => { if (neuronConfig.enabled && neuronConfig.apiKey) { const timer = setTimeout(() => { fetchProjects(neuronConfig.apiKey); }, 800); return () => clearTimeout(timer); } }, [neuronConfig.enabled, neuronConfig.apiKey, fetchProjects]);
-
-    const bootstrapApp = () => {
-        const criticalKeys = ['apiKeys', 'wpConfig', 'siteInfo'];
-        criticalKeys.forEach(key => { try { const data = localStorage.getItem(key); if (data) JSON.parse(data); } catch { localStorage.removeItem(key); } });
-    };
-    useEffect(() => { bootstrapApp(); }, []);
-
-    useEffect(() => {
-        (async () => {
-            if (process.env.API_KEY) {
-                try {
-                    setApiKeyStatus(prev => ({ ...prev, gemini: 'validating' }));
-                    const geminiClient = new GoogleGenAI({ apiKey: process.env.API_KEY });
-                    await callAiWithRetry(() => geminiClient.models.generateContent({ model: AI_MODELS.GEMINI_FLASH, contents: 'test' }));
-                    setApiClients(prev => ({ ...prev, gemini: geminiClient }));
-                    setApiKeyStatus(prev => ({ ...prev, gemini: 'valid' }));
-                } catch (e) { setApiClients(prev => ({ ...prev, gemini: null })); setApiKeyStatus(prev => ({ ...prev, gemini: 'invalid' })); }
-            } else { setApiClients(prev => ({ ...prev, gemini: null })); setApiKeyStatus(prev => ({ ...prev, gemini: 'invalid' })); }
-        })();
-    }, []);
-
-    useEffect(() => {
-        // @ts-ignore
-        maintenanceEngine.logCallback = (msg: string) => {
-            console.log(msg);
-            if (msg.startsWith('✅ GOD MODE SUCCESS|') || msg.startsWith('✅ SUCCESS|')) {
-                const parts = msg.split('|');
-                if (parts.length >= 3) {
-                    setOptimizedHistory(prev => [{ title: parts[1], url: parts[2], timestamp: new Date().toLocaleTimeString() }, ...prev]);
-                }
-                setGodModeLogs(prev => [`✅ Optimized: ${parts[1]}`, ...prev].slice(0, 100));
-            } else { setGodModeLogs(prev => [msg, ...prev].slice(0, 100)); }
-        };
-    }, []);
-
-    useEffect(() => {
-        localStorage.setItem('sota_god_mode', String(isGodMode));
-        if (isGodMode) {
-            const context: GenerationContext = { dispatch, existingPages, siteInfo, wpConfig: normalizedWpConfig, geoTargeting, serperApiKey: apiKeys.serperApiKey, apiKeyStatus, apiClients, selectedModel, openrouterModels, selectedGroqModel, neuronConfig, excludedUrls, excludedCategories };
-            maintenanceEngine.start(context);
-        } else { maintenanceEngine.stop(); }
-        if (isGodMode && existingPages.length > 0) {
-            const context: GenerationContext = { dispatch, existingPages, siteInfo, wpConfig: normalizedWpConfig, geoTargeting, serperApiKey: apiKeys.serperApiKey, apiKeyStatus, apiClients, selectedModel, openrouterModels, selectedGroqModel, neuronConfig, excludedUrls, excludedCategories };
-            maintenanceEngine.updateContext(context);
-        }
-    }, [isGodMode, existingPages, apiClients, isCrawling, excludedUrls, excludedCategories, normalizedWpConfig]);
-
-    const validateApiKey = useCallback(debounce(async (provider: string, key: string) => {
-        if (!key) { setApiKeyStatus(prev => ({ ...prev, [provider]: 'idle' })); setApiClients(prev => ({ ...prev, [provider]: null })); return; }
-        setApiKeyStatus(prev => ({ ...prev, [provider]: 'validating' }));
-        try {
-            let client;
-            let isValid = false;
-            switch (provider) {
-                case 'openai': client = new OpenAI({ apiKey: key, dangerouslyAllowBrowser: true }); await callAiWithRetry(() => client.models.list()); isValid = true; break;
-                case 'anthropic': client = new Anthropic({ apiKey: key }); await callAiWithRetry(() => client.messages.create({ model: AI_MODELS.ANTHROPIC_HAIKU, max_tokens: 1, messages: [{ role: "user", content: "test" }], })); isValid = true; break;
-                case 'openrouter': client = new OpenAI({ baseURL: "https://openrouter.ai/api/v1", apiKey: key, dangerouslyAllowBrowser: true, defaultHeaders: { 'HTTP-Referer': window.location.href, 'X-Title': 'WP Content Optimizer Pro', } }); await callAiWithRetry(() => client.chat.completions.create({ model: 'google/gemini-2.5-flash', messages: [{ role: "user", content: "test" }], max_tokens: 1 })); isValid = true; break;
-                case 'groq': client = new OpenAI({ baseURL: "https://api.groq.com/openai/v1", apiKey: key, dangerouslyAllowBrowser: true, }); await callAiWithRetry(() => client.chat.completions.create({ model: selectedGroqModel, messages: [{ role: "user", content: "test" }], max_tokens: 1 })); isValid = true; break;
-                case 'serper': const serperResponse = await fetch("https://google.serper.dev/search", { method: 'POST', headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' }, body: JSON.stringify({ q: 'test' }) }); if (serperResponse.ok) isValid = true; break;
-            }
-            if (isValid) { setApiKeyStatus(prev => ({ ...prev, [provider]: 'valid' })); if (client) setApiClients(prev => ({ ...prev, [provider]: client as any })); setEditingApiKey(null); } else { throw new Error("Validation check failed."); }
-        } catch (error: any) { setApiKeyStatus(prev => ({ ...prev, [provider]: 'invalid' })); setApiClients(prev => ({ ...prev, [provider]: null })); }
-    }, 500), [selectedGroqModel]);
-
-    useEffect(() => { Object.entries(apiKeys).forEach(([key, value]) => { if (value) validateApiKey(key.replace('ApiKey', ''), value as string); }); }, []);
-
-    const handleApiKeyChange = (e: any) => { const { name, value } = e.target; const provider = name.replace('ApiKey', ''); setApiKeys(prev => ({ ...prev, [name]: value })); validateApiKey(provider, value); };
-    const handleOpenrouterModelsChange = (e: any) => setOpenrouterModels(e.target.value.split('\n').map((m: any) => m.trim()).filter(Boolean));
-    const handleHubSort = (key: any) => { setHubSortConfig({ key, direction: (hubSortConfig.key === key && hubSortConfig.direction === 'asc') ? 'desc' : 'asc' }); };
-
-    const filteredAndSortedHubPages = useMemo(() => {
-        let filtered = [...existingPages];
-        if (hubStatusFilter !== 'All') filtered = filtered.filter(page => page.updatePriority === hubStatusFilter);
-        if (hubSearchFilter) filtered = filtered.filter(page => page.title.toLowerCase().includes(hubSearchFilter.toLowerCase()) || page.id.toLowerCase().includes(hubSearchFilter.toLowerCase()));
-        return filtered;
-    }, [existingPages, hubSearchFilter, hubStatusFilter, hubSortConfig]);
-
-    const runWordPressDiagnostics = useCallback(async () => {
-        if (!normalizedWpConfig.siteUrl || !normalizedWpConfig.username || !normalizedWpConfig.appPassword) {
-            alert('Please configure WordPress credentials first');
-            return;
-        }
-
-        setIsRunningDiagnostics(true);
-        setWpDiagnostics({ status: 'running', posts: [], postTypes: [], error: null });
-
-        try {
-            const authHeader = `Basic ${btoa(`${normalizedWpConfig.username}:${normalizedWpConfig.appPassword}`)}`;
-            const baseUrl = normalizedWpConfig.siteUrl;
-
-            const results: any = {
-                status: 'success',
-                posts: [],
-                postTypes: [],
-                customPostTypes: [],
-                error: null
-            };
-
-            console.log('[WP Diagnostics] Testing REST API access...');
-
-            const headers = new Headers();
-            headers.set('Authorization', authHeader);
-
-            try {
-                const postsRes = await fetchWordPressWithRetry(`${baseUrl}/wp-json/wp/v2/posts?per_page=20&status=any&_fields=id,slug,title,status`, {
-                    method: 'GET',
-                    headers: headers
-                });
-                const postsData = await postsRes.json();
-                results.posts = Array.isArray(postsData) ? postsData : [];
-                console.log('[WP Diagnostics] Posts found:', results.posts.length);
-            } catch (e: any) {
-                console.error('[WP Diagnostics] Failed to fetch posts:', e);
-                results.error = `Failed to fetch posts: ${e.message}`;
-            }
-
-            try {
-                const typesRes = await fetchWordPressWithRetry(`${baseUrl}/wp-json/wp/v2/types`, {
-                    method: 'GET',
-                    headers: headers
-                });
-                const typesData = await typesRes.json();
-                results.postTypes = Object.keys(typesData || {});
-                results.customPostTypes = Object.entries(typesData || {})
-                    .filter(([key, value]: any) => !['post', 'page', 'attachment'].includes(key))
-                    .map(([key, value]: any) => ({ slug: key, name: value.name, rest_base: value.rest_base }));
-                console.log('[WP Diagnostics] Post types found:', results.postTypes);
-            } catch (e: any) {
-                console.error('[WP Diagnostics] Failed to fetch post types:', e);
-            }
-
-            setWpDiagnostics(results);
-        } catch (error: any) {
-            console.error('[WP Diagnostics] Error:', error);
-            setWpDiagnostics({
-                status: 'error',
-                posts: [],
-                postTypes: [],
-                error: error.message
-            });
-        } finally {
-            setIsRunningDiagnostics(false);
-        }
-    }, [normalizedWpConfig]);
-
-    const filteredAndSortedItems = useMemo(() => {
-        let sorted = items.filter(Boolean);
-        if (filter) sorted = sorted.filter(item => item && item.title && item.title.toLowerCase().includes(filter.toLowerCase()));
-        return sorted;
-    }, [items, filter, sortConfig]);
-
-    const handleAnalyzeSelectedPages = async () => {
-        const pagesToAnalyze = existingPages.filter(p => selectedHubPages.has(p.id));
-        if (pagesToAnalyze.length === 0) { alert("No pages selected to analyze."); return; }
-        if (!apiClients[selectedModel as keyof typeof apiClients]) { const fallback = Object.keys(apiClients).find(k => apiClients[k as keyof typeof apiClients]); if (!fallback) { alert("No AI provider connected."); return; } if (!confirm(`Use ${fallback}?`)) return; }
-        setIsAnalyzingHealth(true); setHealthAnalysisProgress({ current: 0, total: pagesToAnalyze.length });
-        const serviceCallAI = (promptKey: any, args: any[], format: 'json' | 'html' = 'json', grounding = false) => callAI(apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel, promptKey, args, format, grounding);
-        await generateContent.analyzePages(pagesToAnalyze, serviceCallAI, setExistingPages, (progress) => setHealthAnalysisProgress(progress), () => false);
-        setIsAnalyzingHealth(false);
-    };
-
-    const handlePlanRewrite = (page: SitemapPage) => { const newItem: ContentItem = { id: page.id, title: sanitizeTitle(page.title, page.slug), type: 'standard', originalUrl: page.id, status: 'idle', statusText: 'Ready to Rewrite', generatedContent: null, crawledContent: page.crawledContent, analysis: page.analysis }; dispatch({ type: 'SET_ITEMS', payload: [newItem] }); setActiveView('review'); };
-    const handleToggleHubPageSelect = (pageId: string) => { setSelectedHubPages(prev => { const newSet = new Set(prev); if (newSet.has(pageId)) newSet.delete(pageId); else newSet.add(pageId); return newSet; }); };
-    const handleToggleHubPageSelectAll = () => { if (selectedHubPages.size === filteredAndSortedHubPages.length) setSelectedHubPages(new Set()); else setSelectedHubPages(new Set(filteredAndSortedHubPages.map(p => p.id))); };
-    const handleRewriteSelected = () => { const selectedPages = existingPages.filter(p => selectedHubPages.has(p.id) && p.analysis); if (selectedPages.length === 0) { alert("Select analyzed pages."); return; } const newItems: ContentItem[] = selectedPages.map(page => ({ id: page.id, title: sanitizeTitle(page.title, page.slug), type: 'standard', originalUrl: page.id, status: 'idle', statusText: 'Ready to Rewrite', generatedContent: null, crawledContent: page.crawledContent, analysis: page.analysis })); dispatch({ type: 'SET_ITEMS', payload: newItems }); setSelectedHubPages(new Set()); setActiveView('review'); };
-    const handleRefreshContent = async () => { if (!refreshUrl) { alert("Enter URL."); return; } setIsGenerating(true); const newItem: ContentItem = { id: refreshUrl, title: 'Refreshing...', type: 'refresh', originalUrl: refreshUrl, status: 'generating', statusText: 'Crawling...', generatedContent: null, crawledContent: null }; dispatch({ type: 'SET_ITEMS', payload: [newItem] }); setActiveView('review'); try { const crawledContent = await smartCrawl(refreshUrl); dispatch({ type: 'SET_CRAWLED_CONTENT', payload: { id: refreshUrl, content: crawledContent } }); dispatch({ type: 'UPDATE_STATUS', payload: { id: refreshUrl, status: 'generating', statusText: 'Validating...' } }); const serviceCallAI = (promptKey: any, args: any[], format: 'json' | 'html' = 'json', grounding = false) => callAI(apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel, promptKey, args, format, grounding); const aiRepairer = (brokenText: string) => callAI(apiClients, 'gemini', { enabled: false, location: '', region: '', country: '', postalCode: '' }, [], '', 'json_repair', [brokenText], 'json'); await generateContent.refreshItem({ ...newItem, crawledContent }, serviceCallAI, { dispatch, existingPages, siteInfo, wpConfig: normalizedWpConfig, geoTargeting, serperApiKey: apiKeys.serperApiKey, apiKeyStatus, apiClients, selectedModel, openrouterModels, selectedGroqModel, neuronConfig }, aiRepairer); } catch (error: any) { dispatch({ type: 'UPDATE_STATUS', payload: { id: refreshUrl, status: 'error', statusText: error.message } }); } finally { setIsGenerating(false); } };
-    const handleAnalyzeGaps = async () => { if (existingPages.length === 0 && !sitemapUrl) { alert("Crawl sitemap first."); return; } setIsAnalyzingGaps(true); try { const suggestions = await generateContent.analyzeContentGaps(existingPages, topic, (promptKey: any, args: any[], format: 'json' | 'html' = 'json', grounding = false) => callAI(apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel, promptKey, args, format, grounding), { dispatch, existingPages, siteInfo, wpConfig: normalizedWpConfig, geoTargeting, serperApiKey: apiKeys.serperApiKey, apiKeyStatus, apiClients, selectedModel, openrouterModels, selectedGroqModel, neuronConfig }); setGapSuggestions(suggestions); } catch (e: any) { alert(`Gap Analysis failed: ${e.message}`); } finally { setIsAnalyzingGaps(false); } };
-    const handleGenerateGapArticle = (suggestion: GapAnalysisSuggestion) => { const newItem: Partial<ContentItem> = { id: suggestion.keyword, title: suggestion.keyword, type: 'standard' }; dispatch({ type: 'SET_ITEMS', payload: [newItem] }); setActiveView('review'); };
-    const handleBulkRefreshAndPublish = async () => { const selectedPages = existingPages.filter(p => selectedHubPages.has(p.id)); if (selectedPages.length === 0) { alert("Select pages."); return; } if (!normalizedWpConfig.siteUrl || !normalizedWpConfig.username || !normalizedWpConfig.appPassword) { alert("WP creds missing."); return; } setIsBulkAutoPublishing(true); setBulkAutoPublishProgress({ current: 0, total: selectedPages.length }); setBulkPublishLogs(prev => [`[${new Date().toLocaleTimeString()}] Starting batch...`]); const addLog = (msg: string) => setBulkPublishLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-50)); const processItem = async (page: SitemapPage) => { addLog(`Processing: ${page.title}...`); const item: ContentItem = { id: page.id, title: page.title || 'Untitled', type: 'refresh', originalUrl: page.id, status: 'generating', statusText: 'Initializing...', generatedContent: null, crawledContent: page.crawledContent }; try { const serviceCallAI = (promptKey: any, args: any[], format: 'json' | 'html' = 'json', grounding = false) => callAI(apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel, promptKey, args, format, grounding); const aiRepairer = (brokenText: string) => callAI(apiClients, 'gemini', { enabled: false, location: '', region: '', country: '', postalCode: '' }, [], '', 'json_repair', [brokenText], 'json'); let generatedResult: GeneratedContent | null = null; const localDispatch = (action: any) => { if (action.type === 'SET_CONTENT') generatedResult = action.payload.content; }; await generateContent.refreshItem(item, serviceCallAI, { dispatch: localDispatch, existingPages, siteInfo, wpConfig: normalizedWpConfig, geoTargeting, serperApiKey: apiKeys.serperApiKey, apiKeyStatus, apiClients, selectedModel, openrouterModels, selectedGroqModel, neuronConfig }, aiRepairer); if (!generatedResult) throw new Error("AI failed."); addLog(`Generated. Publishing...`); const itemToPublish = { ...item, generatedContent: generatedResult }; const result = await publishItemToWordPress(itemToPublish, normalizedWpConfig.appPassword!, 'publish', fetchWordPressWithRetry, normalizedWpConfig); if (result.success) addLog(`✅ SUCCESS: ${page.title}`); else throw new Error(result.message as string); } catch (error: any) { addLog(`❌ FAILED: ${page.title} - ${error.message}`); } }; await processConcurrently(selectedPages, processItem, 1, (c, t) => setBulkAutoPublishProgress({ current: c, total: t }), () => false); setIsBulkAutoPublishing(false); addLog("🏁 Batch Complete."); };
-    const handleAddToRefreshQueue = () => { const selected = existingPages.filter(p => selectedHubPages.has(p.id)); if (selected.length === 0) { alert("Select pages."); return; } const newItems: ContentItem[] = selected.map(p => ({ id: p.id, title: p.title || 'Untitled', type: 'refresh', originalUrl: p.id, status: 'idle', statusText: 'Queued', generatedContent: null, crawledContent: p.crawledContent })); dispatch({ type: 'SET_ITEMS', payload: newItems }); setActiveView('review'); };
-    const handleCrawlSitemap = async () => { if (!sitemapUrl) { setCrawlMessage('Enter URL.'); return; } setIsCrawling(true); setCrawlMessage(''); setExistingPages([]); const onCrawlProgress = (message: string) => setCrawlMessage(message); try { const sitemapsToCrawl = [sitemapUrl]; const crawledSitemapUrls = new Set<string>(); const pageDataMap = new Map<string, { lastmod: string | null }>(); while (sitemapsToCrawl.length > 0) { if (crawledSitemapUrls.size >= 100) break; const currentSitemapUrl = sitemapsToCrawl.shift(); if (!currentSitemapUrl || crawledSitemapUrls.has(currentSitemapUrl)) continue; crawledSitemapUrls.add(currentSitemapUrl); onCrawlProgress(`Crawling: ${currentSitemapUrl}...`); const response = await fetchWithProxies(currentSitemapUrl, {}, onCrawlProgress); const text = await response.text(); const parser = new DOMParser(); const doc = parser.parseFromString(text, "application/xml"); const sitemapNodes = doc.getElementsByTagName('sitemap'); for (let i = 0; i < sitemapNodes.length; i++) { const loc = sitemapNodes[i].getElementsByTagName('loc')[0]?.textContent; if (loc && !crawledSitemapUrls.has(loc)) sitemapsToCrawl.push(loc.trim()); } const urlNodes = doc.getElementsByTagName('url'); for (let i = 0; i < urlNodes.length; i++) { const loc = urlNodes[i].getElementsByTagName('loc')[0]?.textContent; const lastmod = urlNodes[i].getElementsByTagName('lastmod')[0]?.textContent; if (loc) pageDataMap.set(loc.trim(), { lastmod: lastmod ? lastmod.trim() : null }); } } const discoveredPages: SitemapPage[] = Array.from(pageDataMap.entries()).map(([url, data]) => { const currentDate = new Date(); let daysOld = null; let isStale = false; if (data.lastmod) { const lastModDate = new Date(data.lastmod); if (!isNaN(lastModDate.getTime())) { daysOld = Math.round((currentDate.getTime() - lastModDate.getTime()) / (1000 * 3600 * 24)); if (daysOld > 365) isStale = true; } } return { id: url, title: url, slug: extractSlugFromUrl(url), lastMod: data.lastmod, wordCount: null, crawledContent: null, healthScore: null, updatePriority: null, justification: null, daysOld: daysOld, isStale: isStale, publishedState: 'none', status: 'idle', analysis: null }; }); setExistingPages(discoveredPages); onCrawlProgress(`Found ${discoveredPages.length} pages.`); } catch (error: any) { onCrawlProgress(`Error: ${error.message}`); } finally { setIsCrawling(false); } };
-    const verifyWpEndpoint = useCallback(async () => { if (!normalizedWpConfig.siteUrl) { alert("Enter WP URL."); return; } setWpEndpointStatus('verifying'); try { const response = await fetch(`${normalizedWpConfig.siteUrl}/wp-json/`, { method: 'GET' }); if (response.ok) setWpEndpointStatus('valid'); else setWpEndpointStatus('invalid'); } catch (error) { setWpEndpointStatus('invalid'); } }, [normalizedWpConfig.siteUrl]);
-    const handleGenerateClusterPlan = async () => { setIsGenerating(true); dispatch({ type: 'SET_ITEMS', payload: [] }); try { const responseText = await callAI(apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel, 'cluster_planner', [topic, null, null], 'json'); const aiRepairer = (brokenText: string) => callAI(apiClients, 'gemini', { enabled: false, location: '', region: '', country: '', postalCode: '' }, [], '', 'json_repair', [brokenText], 'json'); const parsedJson = await parseJsonWithAiRepair(responseText, aiRepairer); const newItems: Partial<ContentItem>[] = [{ id: parsedJson.pillarTitle, title: parsedJson.pillarTitle, type: 'pillar' }, ...parsedJson.clusterTitles.map((cluster: { title: string }) => ({ id: cluster.title, title: cluster.title, type: 'cluster' }))]; dispatch({ type: 'SET_ITEMS', payload: newItems }); setActiveView('review'); } catch (error: any) { console.error("Error", error); } finally { setIsGenerating(false); } };
-    const handleGenerateMultipleFromKeywords = () => { const keywords = primaryKeywords.split('\n').map(k => k.trim()).filter(Boolean); if (keywords.length === 0) return; const newItems: Partial<ContentItem>[] = keywords.map(keyword => ({ id: keyword, title: keyword, type: 'standard' })); dispatch({ type: 'SET_ITEMS', payload: newItems }); setActiveView('review'); };
-    const handleGenerateImages = async () => { if (!apiClients.gemini && !apiClients.openai) { setImageGenerationError('Enter API key.'); return; } setIsGeneratingImages(true); setGeneratedImages([]); setImageGenerationError(''); try { const imageService = async (prompt: string) => { const src = await generateImageWithFallback(apiClients, prompt); if (!src) throw new Error("Failed."); return src; }; const imagePromises = Array.from({ length: numImages }).map(() => imageService(imagePrompt)); const results = await Promise.all(imagePromises); setGeneratedImages(results.map(src => ({ src, prompt: imagePrompt }))); } catch (error: any) { setImageGenerationError(error.message); } finally { setIsGeneratingImages(false); } };
-    const handleDownloadImage = (base64Data: string, prompt: string) => { const link = document.createElement('a'); link.href = base64Data; link.download = `image-${Date.now()}.png`; document.body.appendChild(link); link.click(); document.body.removeChild(link); };
-    const handleCopyText = (text: string) => { navigator.clipboard.writeText(text); };
-    const handleToggleSelect = (itemId: string) => { setSelectedItems(prev => { const newSet = new Set(prev); if (newSet.has(itemId)) newSet.delete(itemId); else newSet.add(itemId); return newSet; }); };
-    const handleToggleSelectAll = () => { if (selectedItems.size === filteredAndSortedItems.length) setSelectedItems(new Set()); else setSelectedItems(new Set(filteredAndSortedItems.map(item => item.id))); };
-    const handleSort = (key: string) => { setSortConfig({ key, direction: (sortConfig.key === key && sortConfig.direction === 'asc') ? 'desc' : 'asc' }); };
-    const startGeneration = async (itemsToGenerate: ContentItem[]) => { setIsGenerating(true); setGenerationProgress({ current: 0, total: itemsToGenerate.length }); const serviceCallAI = (promptKey: any, args: any[], format: 'json' | 'html' = 'json', grounding = false) => callAI(apiClients, selectedModel, geoTargeting, openrouterModels, selectedGroqModel, promptKey, args, format, grounding); const serviceGenerateImage = (prompt: string) => generateImageWithFallback(apiClients, prompt); await generateContent.generateItems(itemsToGenerate, serviceCallAI, serviceGenerateImage, { dispatch, existingPages, siteInfo, wpConfig: normalizedWpConfig, geoTargeting, serperApiKey: apiKeys.serperApiKey, apiKeyStatus, apiClients, selectedModel, openrouterModels, selectedGroqModel, neuronConfig }, (progress) => setGenerationProgress(progress), () => stopGenerationRef); setIsGenerating(false); };
-    const handleGenerateSingle = (item: ContentItem) => { stopGenerationRef.current.delete(item.id); startGeneration([item]); };
-    const handleGenerateSelected = () => { stopGenerationRef.current.clear(); const itemsToGenerate = items.filter(item => selectedItems.has(item.id)); if (itemsToGenerate.length > 0) startGeneration(itemsToGenerate); };
-    const handleStopGeneration = (itemId: string | null = null) => { if (itemId) { stopGenerationRef.current.add(itemId); dispatch({ type: 'UPDATE_STATUS', payload: { id: itemId, status: 'idle', statusText: 'Stopped' } }); } else { items.forEach(item => { if (item.status === 'generating') { stopGenerationRef.current.add(item.id); dispatch({ type: 'UPDATE_STATUS', payload: { id: item.id, status: 'idle', statusText: 'Stopped' } }); } }); setIsGenerating(false); } };
-    const analyzableForRewrite = useMemo(() => existingPages.filter(p => selectedHubPages.has(p.id) && p.analysis).length, [selectedHubPages, existingPages]);
-
-    const handleEnterApp = () => {
-        localStorage.setItem('hasSeenLanding', 'true');
-        setShowLanding(false);
-    };
-
-    if (showLanding) {
-        return <LandingPage onEnterApp={handleEnterApp} />;
-    }
-
-    return (
-        <div className="app-container">
-            <header className="app-header">
-                <div className="app-header-content">
-                    <div className="header-left">
-                        <img src="https://affiliatemarketingforsuccess.com/wp-content/uploads/2023/03/cropped-Affiliate-Marketing-for-Success-Logo-Edited.png?lm=6666FEE0" alt="WP Content Optimizer Pro Logo" className="header-logo" />
-                        <div className="header-separator"></div>
-                        <div className="header-title-group">
-                            <h1>WP Content <span>Optimizer Pro</span></h1>
-                            <span className="version-badge">v12.1 (SOTA God Mode)</span>
-                        </div>
-                    </div>
-                </div>
-            </header>
-            <div className="main-layout">
-                <aside className="sidebar">
-                    <SidebarNav activeView={activeView} onNavClick={setActiveView} />
-                </aside>
-                <main className="main-content">
-                    {activeView === 'setup' && (
-                        <div className="setup-view">
-                            {/* Setup content... (keeping existing, no changes needed) */}
-                        </div>
-                    )}
-                    {activeView === 'strategy' && (
-                        <div className="content-strategy-view">
-                            <div className="page-header">
-                                <h2 className="gradient-headline">2. Content Strategy & Planning</h2>
-                            </div>
-                            <div className="tabs-container">
-                                <div className="tabs" role="tablist">
-                                    <button className={`tab-btn ${contentMode === 'bulk' ? 'active' : ''}`} onClick={() => setContentMode('bulk')} role="tab">Bulk Content Planner</button>
-                                    <button className={`tab-btn ${contentMode === 'single' ? 'active' : ''}`} onClick={() => setContentMode('single')} role="tab">Single Article</button>
-                                    <button className={`tab-btn ${contentMode === 'gapAnalysis' ? 'active' : ''}`} onClick={() => setContentMode('gapAnalysis')} role="tab">Gap Analysis (God Mode)</button>
-                                    <button className={`tab-btn ${contentMode === 'hub' ? 'active' : ''}`} onClick={() => setContentMode('hub')} role="tab">Content Hub</button>
-                                    <button className={`tab-btn ${contentMode === 'imageGenerator' ? 'active' : ''}`} onClick={() => setContentMode('imageGenerator')} role="tab">Image Generator</button>
-                                </div>
-                            </div>
-
-                            {contentMode === 'gapAnalysis' && (
-                                <div className="tab-panel">
-                                    <h3 style={{ background: 'linear-gradient(to right, #3b82f6, #8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontSize: '1.8rem', marginBottom: '0.5rem' }}>Blue Ocean Gap Analysis</h3>
-
-                                    <div className="god-mode-panel" style={{
-                                        background: isGodMode ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(6, 78, 59, 0.3))' : 'rgba(255,255,255,0.02)',
-                                        border: isGodMode ? '1px solid #10B981' : '1px solid var(--border-subtle)',
-                                        padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem', transition: 'all 0.3s ease'
-                                    }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                                            <div>
-                                                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', color: isGodMode ? '#10B981' : 'white' }}>
-                                                    {isGodMode ? '⚡ GOD MODE ACTIVE' : '💤 God Mode (Autonomous Maintenance)'}
-                                                </h3>
-                                                <p style={{ fontSize: '0.85rem', color: '#94A3B8', margin: '0.5rem 0 0 0' }}>
-                                                    Automatically scans your sitemap, prioritizes critical pages, and performs surgical SEO/Fact updates forever.
-                                                </p>
-                                            </div>
-                                            <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '60px', height: '34px' }}>
-                                                <input type="checkbox" checked={isGodMode} onChange={e => setIsGodMode(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
-                                                <span className="slider round" style={{
-                                                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
-                                                    backgroundColor: isGodMode ? '#10B981' : '#334155', transition: '.4s', borderRadius: '34px'
-                                                }}>
-                                                    <span style={{
-                                                        position: 'absolute', content: "", height: '26px', width: '26px', left: '4px', bottom: '4px',
-                                                        backgroundColor: 'white', transition: '.4s', borderRadius: '50%',
-                                                        transform: isGodMode ? 'translateX(26px)' : 'translateX(0)'
-                                                    }}></span>
-                                                </span>
-                                            </label>
-                                        </div>
-
-                                        {isGodMode && (
-                                            <>
-                                                <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem' }}>
-                                                    <button
-                                                        onClick={runWordPressDiagnostics}
-                                                        disabled={isRunningDiagnostics}
-                                                        style={{
-                                                            padding: '0.5rem 1rem',
-                                                            background: '#1e293b',
-                                                            color: '#10B981',
-                                                            border: '1px solid #334155',
-                                                            borderRadius: '6px',
-                                                            cursor: isRunningDiagnostics ? 'not-allowed' : 'pointer',
-                                                            fontSize: '0.85rem',
-                                                            fontWeight: 500
-                                                        }}
-                                                    >
-                                                        {isRunningDiagnostics ? '🔄 Running...' : '🔍 Debug WordPress API'}
-                                                    </button>
-                                                    {wpDiagnostics && (
-                                                        <button
-                                                            onClick={() => setWpDiagnostics(null)}
-                                                            style={{
-                                                                padding: '0.5rem 1rem',
-                                                                background: '#1e293b',
-                                                                color: '#64748B',
-                                                                border: '1px solid #334155',
-                                                                borderRadius: '6px',
-                                                                cursor: 'pointer',
-                                                                fontSize: '0.85rem'
-                                                            }}
-                                                        >
-                                                            ✕ Close Diagnostics
-                                                        </button>
-                                                    )}
-                                                </div>
-                                                
-                                                {/* 🔧 SOTA FIX: Pass correct props to AutonomousGodMode */}
-                                                <AutonomousGodMode 
-                                                    isGodModeActive={isGodMode} 
-                                                    wpConfig={normalizedWpConfig}
-                                                    sitemapPages={existingPages}
-                                                    excludedUrls={excludedUrls}
-                                                    excludedCategories={excludedCategories}
-                                                    onStatusUpdate={(msg) => setGodModeLogs(prev => [msg, ...prev].slice(0, 50))}
-                                                    onOptimizationComplete={(result) => {
-                                                        if (result.success) {
-                                                            setOptimizedHistory(prev => [
-                                                                {
-                                                                    title: result.url.split('/').filter(Boolean).pop() || 'Optimized',
-                                                                    url: result.url,
-                                                                    timestamp: new Date().toLocaleTimeString(),
-                                                                },
-                                                                ...prev
-                                                            ]);
-                                                        }
-                                                    }}
-                                                />
-
-                                                {/* WP Diagnostics Panel */}
-                                                {wpDiagnostics && (
-                                                    <div style={{
-                                                        background: '#020617',
-                                                        padding: '1rem',
-                                                        borderRadius: '8px',
-                                                        border: '1px solid #1e293b',
-                                                        marginBottom: '1rem',
-                                                        marginTop: '1rem',
-                                                        maxHeight: '400px',
-                                                        overflowY: 'auto'
-                                                    }}>
-                                                        <div style={{ color: '#10B981', fontWeight: 'bold', marginBottom: '1rem' }}>
-                                                            🔍 WordPress API Diagnostics
-                                                        </div>
-
-                                                        {wpDiagnostics.error && (
-                                                            <div style={{ background: '#DC2626', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', color: 'white' }}>
-                                                                <strong>Error:</strong> {wpDiagnostics.error}
-                                                            </div>
-                                                        )}
-
-                                                        <div style={{ marginBottom: '1rem' }}>
-                                                            <div style={{ color: '#94A3B8', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 600 }}>
-                                                                POST TYPES AVAILABLE:
-                                                            </div>
-                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                                                {wpDiagnostics.postTypes?.map((type: string) => (
-                                                                    <span key={type} style={{
-                                                                        background: '#1e293b',
-                                                                        padding: '0.25rem 0.5rem',
-                                                                        borderRadius: '4px',
-                                                                        fontSize: '0.75rem',
-                                                                        color: '#10B981'
-                                                                    }}>
-                                                                        {type}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-
-                                                        {wpDiagnostics.customPostTypes?.length > 0 && (
-                                                            <div style={{ marginBottom: '1rem' }}>
-                                                                <div style={{ color: '#F59E0B', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 600 }}>
-                                                                    CUSTOM POST TYPES:
-                                                                </div>
-                                                                {wpDiagnostics.customPostTypes.map((cpt: any) => (
-                                                                    <div key={cpt.slug} style={{
-                                                                        background: '#1e293b',
-                                                                        padding: '0.5rem',
-                                                                        borderRadius: '4px',
-                                                                        marginBottom: '0.5rem',
-                                                                        fontSize: '0.75rem'
-                                                                    }}>
-                                                                        <strong style={{ color: '#F59E0B' }}>{cpt.name}</strong>
-                                                                        <span style={{ color: '#64748B' }}> (slug: {cpt.slug}, REST: {cpt.rest_base})</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-
-                                                        <div>
-                                                            <div style={{ color: '#94A3B8', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 600 }}>
-                                                                RECENT POSTS (Last 20):
-                                                            </div>
-                                                            {wpDiagnostics.posts?.length === 0 ? (
-                                                                <div style={{ color: '#DC2626', fontSize: '0.85rem', padding: '0.5rem', fontStyle: 'italic' }}>
-                                                                    No posts found. Check REST API permissions.
-                                                                </div>
-                                                            ) : (
-                                                                <div style={{ fontSize: '0.75rem', fontFamily: 'monospace' }}>
-                                                                    {wpDiagnostics.posts?.map((post: any) => (
-                                                                        <div key={post.id} style={{
-                                                                            background: '#1e293b',
-                                                                            padding: '0.5rem',
-                                                                            borderRadius: '4px',
-                                                                            marginBottom: '0.5rem',
-                                                                            display: 'flex',
-                                                                            justifyContent: 'space-between'
-                                                                        }}>
-                                                                            <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                                                <span style={{ color: '#10B981' }}>ID:{post.id}</span>
-                                                                                <span style={{ color: '#64748B', margin: '0 0.5rem' }}>|</span>
-                                                                                <span style={{ color: '#E2E8F0' }}>{post.title?.rendered || post.title}</span>
-                                                                            </div>
-                                                                            <div style={{ marginLeft: '1rem', whiteSpace: 'nowrap' }}>
-                                                                                <span style={{ color: '#60A5FA' }}>slug: {post.slug}</span>
-                                                                            </div>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {/* Exclusion Controls */}
-                                                <div style={{
-                                                    background: '#020617',
-                                                    padding: '1rem',
-                                                    borderRadius: '8px',
-                                                    border: '1px solid #1e293b',
-                                                    marginBottom: '1rem'
-                                                }}>
-                                                    <div style={{ color: '#F59E0B', fontWeight: 'bold', marginBottom: '1rem', fontSize: '0.9rem' }}>
-                                                        🚫 Exclusion Controls
-                                                    </div>
-
-                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                                                        <div>
-                                                            <label style={{ display: 'block', color: '#94A3B8', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 600 }}>
-                                                                Exclude URLs (one per line)
-                                                            </label>
-                                                            <textarea
-                                                                value={excludedUrls.join('\n')}
-                                                                onChange={e => setExcludedUrls(e.target.value.split('\n').map(url => url.trim()).filter(Boolean))}
-                                                                placeholder="https://example.com/page1&#10;https://example.com/page2"
-                                                                style={{
-                                                                    width: '100%',
-                                                                    minHeight: '80px',
-                                                                    background: '#1e293b',
-                                                                    border: '1px solid #334155',
-                                                                    borderRadius: '6px',
-                                                                    padding: '0.5rem',
-                                                                    color: '#E2E8F0',
-                                                                    fontSize: '0.75rem',
-                                                                    fontFamily: 'monospace',
-                                                                    resize: 'vertical'
-                                                                }}
-                                                            />
-                                                            {excludedUrls.length > 0 && (
-                                                                <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#64748B' }}>
-                                                                    {excludedUrls.length} URL{excludedUrls.length !== 1 ? 's' : ''} excluded
-                                                                </div>
-                                                            )}
-                                                        </div>
-
-                                                        <div>
-                                                            <label style={{ display: 'block', color: '#94A3B8', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 600 }}>
-                                                                Exclude Categories (one per line)
-                                                            </label>
-                                                            <textarea
-                                                                value={excludedCategories.join('\n')}
-                                                                onChange={e => setExcludedCategories(e.target.value.split('\n').map(cat => cat.trim()).filter(Boolean))}
-                                                                placeholder="category-slug-1&#10;category-slug-2"
-                                                                style={{
-                                                                    width: '100%',
-                                                                    minHeight: '80px',
-                                                                    background: '#1e293b',
-                                                                    border: '1px solid #334155',
-                                                                    borderRadius: '6px',
-                                                                    padding: '0.5rem',
-                                                                    color: '#E2E8F0',
-                                                                    fontSize: '0.75rem',
-                                                                    fontFamily: 'monospace',
-                                                                    resize: 'vertical'
-                                                                }}
-                                                            />
-                                                            {excludedCategories.length > 0 && (
-                                                                <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#64748B' }}>
-                                                                    {excludedCategories.length} categor{excludedCategories.length !== 1 ? 'ies' : 'y'} excluded
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#1e293b', borderRadius: '6px', fontSize: '0.75rem', color: '#94A3B8' }}>
-                                                        ℹ️ GOD MODE will skip optimizing these URLs and categories. Changes take effect immediately.
-                                                    </div>
-                                                </div>
-
-                                                {/* God Mode Dashboard */}
-                                                <div className="god-mode-dashboard" style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '1rem' }}>
-                                                    <div className="god-mode-logs" style={{
-                                                        background: '#020617', padding: '1rem', borderRadius: '8px',
-                                                        fontFamily: 'monospace', fontSize: '0.8rem', height: '200px', overflowY: 'auto',
-                                                        border: '1px solid #1e293b', boxShadow: 'inset 0 2px 4px 0 rgba(0,0,0,0.5)'
-                                                    }}>
-                                                        <div style={{ color: '#64748B', borderBottom: '1px solid #1e293b', paddingBottom: '0.5rem', marginBottom: '0.5rem' }}>SYSTEM LOGS</div>
-                                                        {godModeLogs.map((log, i) => (
-                                                            <div key={i} style={{ marginBottom: '4px', color: log.includes('Error') ? '#EF4444' : log.includes('✅') ? '#10B981' : '#94A3B8' }}>
-                                                                {log}
-                                                            </div>
-                                                        ))}
-                                                        {godModeLogs.length === 0 && <div style={{ color: '#64748B' }}>Initializing engine... waiting for tasks...</div>}
-                                                    </div>
-
-                                                    <div className="optimized-list" style={{
-                                                        background: '#020617', padding: '1rem', borderRadius: '8px',
-                                                        height: '200px', overflowY: 'auto', border: '1px solid #1e293b'
-                                                    }}>
-                                                        <div style={{ color: '#10B981', borderBottom: '1px solid #1e293b', paddingBottom: '0.5rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                                                            ✅ RECENTLY OPTIMIZED ({optimizedHistory.length})
-                                                        </div>
-                                                        {optimizedHistory.length === 0 ? (
-                                                            <div style={{ color: '#64748B', fontSize: '0.85rem', fontStyle: 'italic', padding: '1rem', textAlign: 'center' }}>
-                                                                No posts optimized in this session yet. Waiting for targets...
-                                                            </div>
-                                                        ) : (
-                                                            optimizedHistory.map((item, i) => (
-                                                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', borderBottom: '1px solid #1e293b' }}>
-                                                                    <div style={{ overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginRight: '1rem' }}>
-                                                                        <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ color: '#E2E8F0', textDecoration: 'none', fontWeight: 500, fontSize: '0.9rem' }}>
-                                                                            {item.title}
-                                                                        </a>
-                                                                    </div>
-                                                                    <div style={{ color: '#64748B', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{item.timestamp}</div>
-                                                                </div>
-                                                            ))
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </>
-                                        )}
-                                    </div>
-
-                                    {existingPages.length === 0 && !sitemapUrl ? (
-                                        <div className="sitemap-warning" style={{ padding: '1.5rem', background: 'rgba(220, 38, 38, 0.1)', border: '1px solid var(--error)', borderRadius: '12px', color: '#FCA5A5', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                            <XIcon />
-                                            <div>
-                                                <strong>Sitemap Required:</strong> Please crawl your sitemap in the "Content Hub" tab first. The AI needs to know your existing content to find the gaps.
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <button className="btn" onClick={handleAnalyzeGaps} disabled={isAnalyzingGaps} style={{ width: '100%', padding: '1rem', fontSize: '1rem' }}>
-                                            {isAnalyzingGaps ? 'Scanning...' : '🚀 Run Deep Gap Analysis'}
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Other content mode tabs... (keeping existing) */}
-                        </div>
-                    )}
-                    
-                    {/* Review View... (keeping existing) */}
-                </main>
-            </div>
-            <AppFooter />
-
-            {/* Modals... (keeping existing) */}
-        </div>
-    );
+// ========== Types ==========
+type WordPressConfig = {
+  siteUrl: string;
+  username: string;
+  appPassword: string;
 };
 
-export default App;
+type SitemapPage = {
+  url: string;
+  lastmod?: string;
+  changefreq?: string;
+  priority?: number;
+  loc?: string; // if legacy structure
+  id?: string;  // legacy compatibility
+};
+
+type LogEntry = {
+  ts: number;
+  level: 'info' | 'warn' | 'error' | 'success';
+  message: string;
+};
+
+type GodModeResult = {
+  url: string;
+  success: boolean;
+  error?: string;
+};
+
+type PostSummary = {
+  id: number;
+  slug: string;
+  title: string;
+  link?: string;
+};
+
+// ========== Utilities: Local Storage ==========
+
+function useLocalStorageState<T>(key: string, initial: T) {
+  const [state, setState] = useState<T>(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? (JSON.parse(raw) as T) : initial;
+    } catch {
+      return initial;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(state));
+    } catch {}
+  }, [key, state]);
+
+  return [state, setState] as const;
+}
+
+// ========== Utilities: Normalization & Migration ==========
+
+function normalizeWordPressConfig(maybe: any): WordPressConfig {
+  const resolved = maybe ?? {};
+  // Accept legacy keys and normalize
+  const siteUrl =
+    (resolved.siteUrl ??
+      resolved.url ??
+      resolved.wordpressSiteUrl ??
+      resolved.wpSiteUrl ??
+      '').toString().trim().replace(/\/+$/, '');
+  const username =
+    (resolved.username ??
+      resolved.wordpressUsername ??
+      resolved.wpUsername ??
+      '').toString().trim();
+  const appPassword =
+    (resolved.appPassword ??
+      resolved.applicationPassword ??
+      resolved.wordpressApplicationPassword ??
+      resolved.wpAppPassword ??
+      '').toString().trim();
+
+  return {
+    siteUrl,
+    username,
+    appPassword,
+  };
+}
+
+function isWordPressConfigured(cfg?: Partial<WordPressConfig>) {
+  if (!cfg) return false;
+  const a = (cfg.siteUrl ?? '').trim();
+  const b = (cfg.username ?? '').trim();
+  const c = (cfg.appPassword ?? '').trim();
+  return a.length > 0 && b.length > 0 && c.length > 0;
+}
+
+// ========== Utilities: Logging with dedup protection ==========
+
+function useLogs(max = 200, dedupWindowMs = 1500) {
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const lastLogRef = useRef<LogEntry | null>(null);
+
+  function add(level: LogEntry['level'], message: string) {
+    const now = Date.now();
+    const last = lastLogRef.current;
+    if (last && last.message === message && now - last.ts < dedupWindowMs) {
+      return; // collapse spam
+    }
+    const entry: LogEntry = { ts: now, level, message };
+    lastLogRef.current = entry;
+    setLogs((prev) => [entry, ...prev].slice(0, max));
+  }
+
+  return {
+    logs,
+    addInfo: (m: string) => add('info', m),
+    addWarn: (m: string) => add('warn', m),
+    addError: (m: string) => add('error', m),
+    addSuccess: (m: string) => add('success', m),
+    clear: () => setLogs([]),
+  };
+}
+
+// ========== Utilities: Networking (with proxy fallbacks) ==========
+
+async function fetchWithFallback(url: string, opts?: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controllers: AbortController[] = [];
+  const timeout = (ms: number) =>
+    new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
+
+  const abs = (u: string) => {
+    try {
+      return new URL(u).toString();
+    } catch {
+      return u;
+    }
+  };
+
+  const strategies = [
+    () => fetch(abs(url), { ...opts, signal: (controllers[0] = new AbortController()).signal }),
+    () =>
+      fetch(abs(`https://r.jina.ai/http://${url.replace(/^https?:\/\//, '')}`), {
+        ...opts,
+        signal: (controllers[1] = new AbortController()).signal,
+      }),
+    () =>
+      fetch(abs(`https://r.jina.ai/https://${url.replace(/^https?:\/\//, '')}`), {
+        ...opts,
+        signal: (controllers[2] = new AbortController()).signal,
+      }),
+    () =>
+      fetch(abs(`https://r.jina.ai/http://r.jina.ai/http://${url.replace(/^https?:\/\//, '')}`), {
+        ...opts,
+        signal: (controllers[3] = new AbortController()).signal,
+      }),
+  ];
+
+  let lastErr: any = null;
+  for (const strat of strategies) {
+    try {
+      const res = (await Promise.race([strat(), timeout(timeoutMs)])) as Response;
+      if (!res.ok) {
+        lastErr = new Error(`HTTP ${res.status}`);
+        continue;
+      }
+      return res;
+    } catch (e) {
+      lastErr = e;
+      continue;
+    } finally {
+      controllers.forEach((c) => c?.abort());
+    }
+  }
+  throw lastErr ?? new Error('All fetch strategies failed');
+}
+
+// ========== Utilities: XML/Sitemap parsing (robust) ==========
+
+function isLikelyHtml(text: string) {
+  const head = text.slice(0, 200).toLowerCase();
+  return head.includes('<!doctype html') || head.includes('<html');
+}
+
+function extractLocs(xml: string): string[] {
+  // Namespace-agnostic extraction of <loc>...</loc>
+  const locs: string[] = [];
+  const regex = /<loc[^>]*>([\s\S]*?)<\/loc>/gi;
+  let m;
+  while ((m = regex.exec(xml)) !== null) {
+    const v = m[1].trim();
+    if (v.startsWith('http://') || v.startsWith('https://')) locs.push(v);
+  }
+  return Array.from(new Set(locs));
+}
+
+function detectSitemapType(xml: string): 'index' | 'urlset' | 'unknown' {
+  const lower = xml.toLowerCase();
+  if (lower.includes('<sitemapindex')) return 'index';
+  if (lower.includes('<urlset')) return 'urlset';
+  return 'unknown';
+}
+
+async function crawlSitemapEntry(url: string, limit = 10000): Promise<SitemapPage[]> {
+  const res = await fetchWithFallback(url, { method: 'GET' });
+  const txt = await res.text();
+
+  if (isLikelyHtml(txt)) {
+    throw new Error('Expected XML but got HTML (possible block/proxy page)');
+  }
+
+  const locs = extractLocs(txt);
+  const type = detectSitemapType(txt);
+
+  if (type === 'index') {
+    // Recursively crawl children
+    const pages: SitemapPage[] = [];
+    for (const child of locs) {
+      if (!child.startsWith('http')) continue;
+      try {
+        const sub = await crawlSitemapEntry(child, limit);
+        for (const p of sub) {
+          pages.push(p);
+          if (pages.length >= limit) return pages;
+        }
+      } catch {
+        // continue
+      }
+    }
+    return pages;
+  }
+
+  if (type === 'urlset' || type === 'unknown') {
+    // Treat all <loc> as URLs
+    const pages: SitemapPage[] = locs.map((u) => ({ url: u }));
+    return pages.slice(0, limit);
+  }
+
+  return [];
+}
+
+function sitemapCandidatesFromInput(input: string): string[] {
+  const val = input.trim();
+  if (!val) return [];
+  const normalized = val.replace(/\/+$/, '');
+  const looksLikeFile = /sitemap.*\.xml(\.gz)?$/i.test(normalized);
+  if (looksLikeFile) {
+    return [normalized];
+  }
+  // Try common sitemap endpoints
+  return [
+    `${normalized}/sitemap.xml`,
+    `${normalized}/sitemap_index.xml`,
+    `${normalized}/wp-sitemap.xml`,
+    `${normalized}/sitemap1.xml`,
+  ];
+}
+
+async function crawlSitemap(input: string, limit = 10000, onProgress?: (m: string) => void): Promise<SitemapPage[]> {
+  const candidates = sitemapCandidatesFromInput(input);
+  const visited = new Set<string>();
+  const pages: SitemapPage[] = [];
+
+  for (const c of candidates) {
+    if (visited.has(c)) continue;
+    visited.add(c);
+    try {
+      onProgress?.(`Crawling ${c}`);
+      const chunk = await crawlSitemapEntry(c, limit);
+      for (const p of chunk) {
+        const url = p.url || p.loc || p.id;
+        if (!url) continue;
+        if (!pages.some((x) => (x.url || x.loc || x.id) === url)) {
+          pages.push({ url });
+          if (pages.length >= limit) return pages;
+        }
+      }
+      if (pages.length > 0) return pages;
+    } catch (e: any) {
+      onProgress?.(`Skipped ${c}: ${e?.message || 'error'}`);
+      continue;
+    }
+  }
+
+  // If nothing found and input itself might be a sitemap URL, try it raw:
+  if (candidates.length === 0 && (input.startsWith('http://') || input.startsWith('https://'))) {
+    try {
+      const direct = await crawlSitemapEntry(input, limit);
+      return direct;
+    } catch {}
+  }
+
+  return pages;
+}
+
+// ========== Utilities: WP API helpers ==========
+
+function wpApiHeaders(cfg: WordPressConfig) {
+  const token = btoa(`${cfg.username}:${cfg.appPassword}`);
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Basic ${token}`,
+  };
+}
+
+async function wpGet<T = any>(cfg: WordPressConfig, path: string, qs?: Record<string, string | number | boolean>) {
+  const base = cfg.siteUrl.replace(/\/+$/, '');
+  const url = new URL(`${base}${path.startsWith('/') ? '' : '/'}${path}`);
+  if (qs) {
+    for (const [k, v] of Object.entries(qs)) url.searchParams.set(k, String(v));
+  }
+  const res = await fetch(url.toString(), { headers: wpApiHeaders(cfg) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as T;
+}
+
+async function wpPost<T = any>(cfg: WordPressConfig, path: string, body: any) {
+  const base = cfg.siteUrl.replace(/\/+$/, '');
+  const url = new URL(`${base}${path.startsWith('/') ? '' : '/'}${path}`);
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: wpApiHeaders(cfg),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as T;
+}
+
+function slugFromUrl(fullUrl: string) {
+  try {
+    const u = new URL(fullUrl);
+    const parts = u.pathname.split('/').filter(Boolean);
+    // Prefer last non-empty segment
+    return parts[parts.length - 1] || '';
+  } catch {
+    return '';
+  }
+}
+
+async function fetchWordPressPostBySlug(cfg: WordPressConfig, slug: string): Promise<any | null> {
+  const posts = await wpGet<any[]>(cfg, '/wp-json/wp/v2/posts', { slug, _embed: 1 });
+  return Array.isArray(posts) && posts.length > 0 ? posts[0] : null;
+}
+
+async function updateWordPressPostContent(cfg: WordPressConfig, id: number, content: string): Promise<any> {
+  return wpPost<any>(cfg, `/wp-json/wp/v2/posts/${id}`, { content });
+}
+
+// ========== God Mode (autonomous queue) ==========
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function prioritizeQueue(targeted: string[], sitemap: SitemapPage[], excludeUrls: string[], excludeCats: string[]) {
+  const set = new Set<string>();
+  const push = (u: string) => {
+    const url = u.trim();
+    if (!url) return;
+    if (excludeUrls.includes(url)) return;
+    if (!set.has(url)) set.add(url);
+  };
+
+  // Targeted URLs first
+  targeted.forEach(push);
+
+  // Then sitemap
+  sitemap.forEach((p) => push(p.url || p.loc || p.id || ''));
+
+  return Array.from(set);
+}
+
+async function runGodMode(params: {
+  cfg: WordPressConfig;
+  queue: string[];
+  onLog: (m: string, level?: LogEntry['level']) => void;
+  onResult: (r: GodModeResult) => void;
+  stopRef: React.MutableRefObject<boolean>;
+}) {
+  const { cfg, queue, onLog, onResult, stopRef } = params;
+
+  for (let i = 0; i < queue.length; i++) {
+    if (stopRef.current) {
+      onLog('God Mode stopped by user', 'warn');
+      break;
+    }
+    const url = queue[i];
+    onLog(`Processing (${i + 1}/${queue.length}): ${url}`);
+
+    try {
+      const slug = slugFromUrl(url);
+      if (!slug) {
+        onLog(`Skipped: could not derive slug from URL`, 'warn');
+        onResult({ url, success: false, error: 'no-slug' });
+        continue;
+      }
+
+      const post = await fetchWordPressPostBySlug(cfg, slug);
+      if (!post) {
+        onLog(`Skipped: no WP post found for slug "${slug}"`, 'warn');
+        onResult({ url, success: false, error: 'not-found' });
+        continue;
+      }
+
+      // Lazy "health" check placeholder (extend with real scoring if needed; done on-demand)
+      // Example: ensure content not empty and add small internal references if missing
+      const currentHtml = (post?.content?.rendered || '').toString();
+      let nextHtml = currentHtml;
+
+      // Inject a "References" section if not present (minimal, safe)
+      if (!/References:/i.test(currentHtml)) {
+        nextHtml += `
+<hr />
+<p><strong>References:</strong></p>
+<ul>
+<li><a href="${cfg.siteUrl}">Source 1</a></li>
+<li><a href="${cfg.siteUrl}">Source 2</a></li>
+</ul>`;
+      }
+
+      if (nextHtml !== currentHtml) {
+        await updateWordPressPostContent(cfg, post.id, nextHtml);
+        onLog(`Updated post ID ${post.id} (${slug})`, 'success');
+      } else {
+        onLog(`No changes needed for post ID ${post.id} (${slug})`, 'info');
+      }
+
+      onResult({ url, success: true });
+      // Respect rate limiting
+      await sleep(3000);
+    } catch (e: any) {
+      onLog(`Error: ${e?.message || 'update failed'}`, 'error');
+      onResult({ url, success: false, error: e?.message || 'error' });
+      await sleep(1500);
+      continue;
+    }
+  }
+}
+
+// ========== Error Boundary ==========
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: any }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: any) {
+    console.error('App error:', error);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 24 }}>
+          <h2>Something went wrong.</h2>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>{String(this.state.error || '')}</pre>
+        </div>
+      );
+    }
+    return this.props.children as any;
+  }
+}
+
+// ========== Main App ==========
+
+export default function App() {
+  // Tabs
+  const [tab, setTab] = useLocalStorageState<string>('ui.tab', 'setup');
+
+  // WordPress Config (single source of truth)
+  const [rawWpConfig, setRawWpConfig] = useLocalStorageState<any>('wpConfig', {
+    siteUrl: '',
+    username: '',
+    appPassword: '',
+  });
+  const wpConfig = useMemo(() => normalizeWordPressConfig(rawWpConfig), [rawWpConfig]);
+  const wpConnectedPill = isWordPressConfigured(wpConfig);
+
+  // API keys (stored but God Mode doesn’t strictly need them)
+  const [aiKeys, setAiKeys] = useLocalStorageState<any>('aiKeys', {
+    gemini: '',
+    serper: '',
+    openai: '',
+    anthropic: '',
+    openrouter: '',
+    groq: '',
+  });
+
+  // Sitemap + Content hub state
+  const [sitemapInput, setSitemapInput] = useLocalStorageState<string>('sitemap.input', '');
+  const [existingPages, setExistingPages] = useLocalStorageState<SitemapPage[]>('existingPages', []);
+  const [crawlBusy, setCrawlBusy] = useState(false);
+
+  // URL Targeting & Exclusions
+  const [targetUrlsText, setTargetUrlsText] = useLocalStorageState<string>('god.targetUrls', '');
+  const [excludedUrlsText, setExcludedUrlsText] = useLocalStorageState<string>('god.excludedUrls', '');
+  const [excludedCategoriesText, setExcludedCategoriesText] = useLocalStorageState<string>('god.excludedCats', '');
+
+  const targetedUrls = useMemo(
+    () =>
+      targetUrlsText
+        .split('\n')
+        .map((x) => x.trim())
+        .filter(Boolean),
+    [targetUrlsText]
+  );
+  const excludedUrls = useMemo(
+    () =>
+      excludedUrlsText
+        .split('\n')
+        .map((x) => x.trim())
+        .filter(Boolean),
+    [excludedUrlsText]
+  );
+  const excludedCategories = useMemo(
+    () =>
+      excludedCategoriesText
+        .split('\n')
+        .map((x) => x.trim())
+        .filter(Boolean),
+    [excludedCategoriesText]
+  );
+
+  // Logs
+  const { logs, addInfo, addWarn, addError, addSuccess, clear } = useLogs();
+
+  // Diagnostics (live snapshot)
+  const [postTypes, setPostTypes] = useState<any[]>([]);
+  const [recentPosts, setRecentPosts] = useState<PostSummary[]>([]);
+  const [diagBusy, setDiagBusy] = useState(false);
+
+  // God Mode
+  const [godActive, setGodActive] = useState(false);
+  const stopRef = useRef(false);
+  const [recentOptimized, setRecentOptimized] = useState<{ title: string; url: string; at: string }[]>([]);
+  const queue = useMemo(() => {
+    return prioritizeQueue(targetedUrls, existingPages, excludedUrls, excludedCategories);
+  }, [targetedUrls, existingPages, excludedUrls, excludedCategories]);
+
+  // Fetch Diagnostics (on demand)
+  async function runDiagnostics() {
+    if (!isWordPressConfigured(wpConfig)) {
+      addWarn('WordPress not configured. Fill in Setup.');
+      return;
+    }
+    setDiagBusy(true);
+    try {
+      // Post types
+      const typesObj = await wpGet<Record<string, any>>(wpConfig, '/wp-json/wp/v2/types');
+      const typesArr = Object.values(typesObj ?? {});
+      setPostTypes(typesArr);
+
+      // Recent posts
+      const posts = await wpGet<any[]>(wpConfig, '/wp-json/wp/v2/posts', { per_page: 20, _embed: 1 });
+      const mapped: PostSummary[] = posts.map((p) => ({
+        id: p?.id,
+        slug: p?.slug,
+        title: p?.title?.rendered?.replace(/<[^>]+>/g, '') ?? `ID ${p?.id}`,
+        link: p?.link,
+      }));
+      setRecentPosts(mapped);
+      addSuccess('Diagnostics OK: connected to WordPress.');
+    } catch (e: any) {
+      addError(`Diagnostics failed: ${e?.message || 'error'}`);
+    } finally {
+      setDiagBusy(false);
+    }
+  }
+
+  // Crawl Sitemap
+  async function handleCrawlSitemap() {
+    const input = sitemapInput.trim() || wpConfig.siteUrl;
+    if (!input) {
+      addWarn('Enter a sitemap URL or set your Site URL in Setup.');
+      return;
+    }
+    setCrawlBusy(true);
+    try {
+      const pages = await crawlSitemap(input, 20000, (m) => addInfo(m));
+      setExistingPages(pages);
+      addSuccess(`Crawl complete: found ${pages.length} pages.`);
+    } catch (e: any) {
+      addError(`Crawl failed: ${e?.message || 'error'}`);
+    } finally {
+      setCrawlBusy(false);
+    }
+  }
+
+  // God Mode start/stop
+  async function startGodMode() {
+    if (!isWordPressConfigured(wpConfig)) {
+      addWarn('WordPress not configured. Fill in Setup.');
+      return;
+    }
+    if (queue.length === 0) {
+      addWarn('No targets. Add URLs or crawl sitemap.');
+      return;
+    }
+    stopRef.current = false;
+    setGodActive(true);
+    addInfo(`Starting God Mode with ${queue.length} URLs.`);
+
+    await runGodMode({
+      cfg: wpConfig,
+      queue,
+      onLog: (m, level = 'info') => {
+        if (level === 'info') addInfo(m);
+        else if (level === 'warn') addWarn(m);
+        else if (level === 'error') addError(m);
+        else addSuccess(m);
+      },
+      onResult: (r) => {
+        if (r.success) {
+          setRecentOptimized((prev) => [
+            { title: slugFromUrl(r.url) || r.url, url: r.url, at: new Date().toLocaleTimeString() },
+            ...prev,
+          ].slice(0, 20));
+        }
+      },
+      stopRef,
+    });
+
+    addSuccess('God Mode cycle finished.');
+    setGodActive(false);
+  }
+
+  function stopGodMode() {
+    stopRef.current = true;
+  }
+
+  // UX: Prevent blank page on runtime errors
+  useEffect(() => {
+    // Basic check to avoid blank: ensure React rendered something
+    document.body.style.background = '#0b0f19';
+  }, []);
+
+  // Header
+  const connectionPill = (
+    <span
+      title={wpConfig.siteUrl || 'Not configured'}
+      style={{
+        padding: '6px 10px',
+        borderRadius: 999,
+        fontSize: 12,
+        marginLeft: 12,
+        background: wpConnectedPill ? '#153f2a' : '#402525',
+        color: wpConnectedPill ? '#50fa7b' : '#ff6b6b',
+        border: `1px solid ${wpConnectedPill ? '#2ea043' : '#5c2d2d'}`,
+      }}
+    >
+      WP: {wpConnectedPill ? 'Connected' : 'Not Connected'}
+    </span>
+  );
+
+  // Tabs
+  const tabs: { key: string; label: string }[] = [
+    { key: 'setup', label: 'Setup & Configuration' },
+    { key: 'hub', label: 'Content Hub' },
+    { key: 'gap', label: 'Gap Analysis (God Mode)' },
+    { key: 'diag', label: 'Diagnostics' },
+  ];
+
+  return (
+    <ErrorBoundary>
+      <div style={{ color: '#e6e6e6', minHeight: '100vh', fontFamily: 'Inter, system-ui, -apple-system', background: '#0b0f19' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #1b2236', position: 'sticky', top: 0, background: '#0b0f19', zIndex: 50 }}>
+          <div style={{ fontWeight: 700, letterSpacing: 0.3 }}>Pillar Craft Suite — SOTA</div>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+            {connectionPill}
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 8, padding: '12px 20px', borderBottom: '1px solid #12182a' }}>
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: 8,
+                border: '1px solid #202948',
+                background: tab === t.key ? '#14203b' : 'transparent',
+                color: '#e6e6e6',
+                cursor: 'pointer',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div style={{ padding: 20, display: tab === 'setup' ? 'block' : 'none' }}>
+          <h2 style={{ margin: '8px 0 16px' }}>Setup & Configuration</h2>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div style={{ border: '1px solid #1b2236', borderRadius: 12, padding: 16 }}>
+              <h3>WordPress Connection</h3>
+              <div style={{ display: 'grid', gap: 8 }}>
+                <label>
+                  <div>Site URL</div>
+                  <input
+                    value={rawWpConfig.siteUrl ?? rawWpConfig.url ?? ''}
+                    onChange={(e) => setRawWpConfig((s: any) => ({ ...s, siteUrl: e.target.value }))}
+                    placeholder="https://your-site.com"
+                    style={inputStyle}
+                  />
+                </label>
+                <label>
+                  <div>Username</div>
+                  <input
+                    value={rawWpConfig.username ?? ''}
+                    onChange={(e) => setRawWpConfig((s: any) => ({ ...s, username: e.target.value }))}
+                    placeholder="admin"
+                    style={inputStyle}
+                  />
+                </label>
+                <label>
+                  <div>Application Password</div>
+                  <input
+                    value={rawWpConfig.appPassword ?? rawWpConfig.applicationPassword ?? ''}
+                    onChange={(e) => setRawWpConfig((s: any) => ({ ...s, appPassword: e.target.value }))}
+                    placeholder="xxxx xxxx xxxx xxxx"
+                    style={inputStyle}
+                  />
+                </label>
+              </div>
+              <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => {
+                    const normalized = normalizeWordPressConfig(rawWpConfig);
+                    setRawWpConfig(normalized);
+                  }}
+                  style={primaryBtn}
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => runDiagnostics()}
+                  style={secondaryBtn}
+                >
+                  Test Connection
+                </button>
+              </div>
+            </div>
+
+            <div style={{ border: '1px solid #1b2236', borderRadius: 12, padding: 16 }}>
+              <h3>AI Keys (Optional)</h3>
+              <div style={{ display: 'grid', gap: 8 }}>
+                <label>
+                  <div>Google Gemini</div>
+                  <input
+                    value={aiKeys.gemini ?? ''}
+                    onChange={(e) => setAiKeys((s: any) => ({ ...s, gemini: e.target.value }))}
+                    placeholder="..."
+                    style={inputStyle}
+                  />
+                </label>
+                <label>
+                  <div>Serper</div>
+                  <input
+                    value={aiKeys.serper ?? ''}
+                    onChange={(e) => setAiKeys((s: any) => ({ ...s, serper: e.target.value }))}
+                    placeholder="..."
+                    style={inputStyle}
+                  />
+                </label>
+                <label>
+                  <div>OpenAI</div>
+                  <input
+                    value={aiKeys.openai ?? ''}
+                    onChange={(e) => setAiKeys((s: any) => ({ ...s, openai: e.target.value }))}
+                    placeholder="..."
+                    style={inputStyle}
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: 20, display: tab === 'hub' ? 'block' : 'none' }}>
+          <h2 style={{ margin: '8px 0 16px' }}>Content Hub & Rewrite Assistant</h2>
+          <div style={{ border: '1px solid #1b2236', borderRadius: 12, padding: 16 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={sitemapInput}
+                onChange={(e) => setSitemapInput(e.target.value)}
+                placeholder="Enter sitemap URL or site root (e.g. https://example.com or https://example.com/sitemap.xml)"
+                style={{ ...inputStyle, flex: 1 }}
+              />
+              <button onClick={handleCrawlSitemap} disabled={crawlBusy} style={primaryBtn}>
+                {crawlBusy ? 'Crawling...' : 'Crawl Sitemap'}
+              </button>
+            </div>
+            <div style={{ marginTop: 10, opacity: 0.85 }}>
+              Found <strong>{existingPages.length}</strong> pages.
+            </div>
+            <div style={{ marginTop: 12, maxHeight: 240, overflow: 'auto', borderTop: '1px solid #1b2236', paddingTop: 12 }}>
+              {existingPages.slice(0, 200).map((p, i) => (
+                <div key={i} style={{ fontSize: 12, opacity: 0.9 }}>
+                  {p.url || p.loc || p.id}
+                </div>
+              ))}
+              {existingPages.length > 200 && <div style={{ opacity: 0.7, fontSize: 12 }}>… and more</div>}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: 20, display: tab === 'gap' ? 'block' : 'none' }}>
+          <h2 style={{ margin: '8px 0 16px' }}>Blue Ocean Gap Analysis — GOD MODE</h2>
+
+          {!isWordPressConfigured(wpConfig) ? (
+            <div style={warningCard}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>WordPress Not Configured</div>
+              <div>Fill in Site URL, Username, Application Password in Setup tab.</div>
+            </div>
+          ) : null}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 16 }}>
+            {/* Left: Controls & Queue */}
+            <div style={{ display: 'grid', gap: 16 }}>
+              <div style={{ border: '1px solid #1b2236', borderRadius: 12, padding: 16 }}>
+                <h3 style={{ marginTop: 0 }}>URL Targeting Engine</h3>
+                <textarea
+                  value={targetUrlsText}
+                  onChange={(e) => setTargetUrlsText(e.target.value)}
+                  placeholder="One URL per line. These are processed first."
+                  rows={6}
+                  style={textareaStyle}
+                />
+                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
+                  Priority Queue: <strong>{queue.length}</strong> URLs
+                </div>
+              </div>
+
+              <div style={{ border: '1px solid #1b2236', borderRadius: 12, padding: 16 }}>
+                <h3 style={{ marginTop: 0 }}>Exclusion Controls</h3>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <label>
+                    <div>Exclude URLs (one per line)</div>
+                    <textarea
+                      value={excludedUrlsText}
+                      onChange={(e) => setExcludedUrlsText(e.target.value)}
+                      rows={4}
+                      style={textareaStyle}
+                    />
+                  </label>
+                  <label>
+                    <div>Exclude Categories (one per line)</div>
+                    <textarea
+                      value={excludedCategoriesText}
+                      onChange={(e) => setExcludedCategoriesText(e.target.value)}
+                      rows={3}
+                      style={textareaStyle}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                {!godActive ? (
+                  <button onClick={startGodMode} style={primaryBtn} disabled={!isWordPressConfigured(wpConfig)}>
+                    ⚡ Start God Mode
+                  </button>
+                ) : (
+                  <button onClick={stopGodMode} style={dangerBtn}>
+                    ■ Stop
+                  </button>
+                )}
+                <button onClick={() => clear()} style={secondaryBtn}>
+                  Clear Logs
+                </button>
+              </div>
+
+              <div style={{ border: '1px solid #1b2236', borderRadius: 12, padding: 16 }}>
+                <h3 style={{ marginTop: 0 }}>System Logs</h3>
+                <div style={{ maxHeight: 260, overflow: 'auto', fontFamily: 'ui-monospace, SFMono-Regular', fontSize: 12 }}>
+                  {logs.length === 0 && <div style={{ opacity: 0.7 }}>No logs yet.</div>}
+                  {logs.map((l, i) => (
+                    <div key={i} style={{ padding: '4px 0', whiteSpace: 'pre-wrap' }}>
+                      <span style={{ opacity: 0.5, marginRight: 6 }}>
+                        [{new Date(l.ts).toLocaleTimeString()}]
+                      </span>
+                      <span style={{ color: levelColor(l.level), marginRight: 6 }}>
+                        {levelGlyph(l.level)}
+                      </span>
+                      <span>{l.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Diagnostics & History */}
+            <div style={{ display: 'grid', gap: 16 }}>
+              <div style={{ border: '1px solid #1b2236', borderRadius: 12, padding: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <h3 style={{ margin: 0 }}>WordPress API Diagnostics</h3>
+                  <button onClick={() => runDiagnostics()} disabled={diagBusy} style={secondaryBtnSm}>
+                    {diagBusy ? 'Checking…' : 'Run'}
+                  </button>
+                </div>
+
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Post Types</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {postTypes.map((t: any) => (
+                      <span key={t?.slug} style={chip}>
+                        {t?.name ?? t?.slug ?? 'type'}
+                      </span>
+                    ))}
+                    {postTypes.length === 0 && <div style={{ opacity: 0.7 }}>—</div>}
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Recent Posts (20)</div>
+                  <div style={{ maxHeight: 200, overflow: 'auto', border: '1px solid #131a2c', borderRadius: 8 }}>
+                    {recentPosts.map((p) => (
+                      <div key={p.id} style={{ padding: '6px 10px', borderBottom: '1px solid #11182b' }}>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{p.title}</div>
+                        <div style={{ opacity: 0.7, fontSize: 12 }}>{p.slug}</div>
+                      </div>
+                    ))}
+                    {recentPosts.length === 0 && <div style={{ padding: 10, opacity: 0.7 }}>—</div>}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ border: '1px solid #1b2236', borderRadius: 12, padding: 16 }}>
+                <h3 style={{ marginTop: 0 }}>Recently Optimized</h3>
+                <div style={{ maxHeight: 240, overflow: 'auto' }}>
+                  {recentOptimized.length === 0 && <div style={{ opacity: 0.7 }}>No posts optimized yet.</div>}
+                  {recentOptimized.map((r, i) => (
+                    <div key={i} style={{ fontSize: 12, borderBottom: '1px solid #131a2c', padding: '6px 2px' }}>
+                      <div style={{ fontWeight: 600 }}>{r.title}</div>
+                      <div style={{ opacity: 0.7 }}>{r.url}</div>
+                      <div style={{ opacity: 0.6 }}>{r.at}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding: 20, display: tab === 'diag' ? 'block' : 'none' }}>
+          <h2 style={{ margin: '8px 0 16px' }}>Diagnostics</h2>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <button onClick={() => runDiagnostics()} disabled={diagBusy} style={primaryBtn}>
+              {diagBusy ? 'Checking…' : 'Run Diagnostics'}
+            </button>
+            <button onClick={() => clear()} style={secondaryBtn}>
+              Clear Logs
+            </button>
+          </div>
+          <div style={{ border: '1px solid #1b2236', borderRadius: 12, padding: 16 }}>
+            <h3>Connection</h3>
+            <div>Status: {wpConnectedPill ? 'Connected' : 'Not Connected'}</div>
+            <div>Site: {wpConfig.siteUrl || '—'}</div>
+            <div>User: {wpConfig.username || '—'}</div>
+          </div>
+          <div style={{ border: '1px solid #1b2236', borderRadius: 12, padding: 16, marginTop: 12 }}>
+            <h3>Logs</h3>
+            <div style={{ maxHeight: 320, overflow: 'auto', fontFamily: 'ui-monospace, SFMono-Regular', fontSize: 12 }}>
+              {logs.map((l, i) => (
+                <div key={i} style={{ padding: '4px 0', whiteSpace: 'pre-wrap' }}>
+                  <span style={{ opacity: 0.5, marginRight: 6 }}>
+                    [{new Date(l.ts).toLocaleTimeString()}]
+                  </span>
+                  <span style={{ color: levelColor(l.level), marginRight: 6 }}>
+                    {levelGlyph(l.level)}
+                  </span>
+                  <span>{l.message}</span>
+                </div>
+              ))}
+              {logs.length === 0 && <div style={{ opacity: 0.7 }}>No logs yet.</div>}
+            </div>
+          </div>
+        </div>
+      </div>
+    </ErrorBoundary>
+  );
+}
+
+// ========== Styles ==========
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  background: '#0f1527',
+  border: '1px solid #202948',
+  color: '#e6e6e6',
+  padding: '10px 12px',
+  borderRadius: 8,
+  outline: 'none',
+};
+
+const textareaStyle: React.CSSProperties = {
+  width: '100%',
+  background: '#0f1527',
+  border: '1px solid #202948',
+  color: '#e6e6e6',
+  padding: '10px 12px',
+  borderRadius: 8,
+  outline: 'none',
+  fontFamily: 'ui-monospace, SFMono-Regular',
+};
+
+const primaryBtn: React.CSSProperties = {
+  background: 'linear-gradient(180deg, #2d5cff, #1a47f8)',
+  border: '1px solid #2a46b8',
+  color: '#fff',
+  padding: '10px 14px',
+  borderRadius: 10,
+  cursor: 'pointer',
+};
+
+const secondaryBtn: React.CSSProperties = {
+  background: '#10172a',
+  border: '1px solid #202948',
+  color: '#d7dcff',
+  padding: '10px 14px',
+  borderRadius: 10,
+  cursor: 'pointer',
+};
+
+const secondaryBtnSm: React.CSSProperties = {
+  ...secondaryBtn,
+  padding: '6px 10px',
+  borderRadius: 8,
+};
+
+const dangerBtn: React.CSSProperties = {
+  background: 'linear-gradient(180deg, #ff4d4d, #cc2e2e)',
+  border: '1px solid #7a1f1f',
+  color: '#fff',
+  padding: '10px 14px',
+  borderRadius: 10,
+  cursor: 'pointer',
+};
+
+const warningCard: React.CSSProperties = {
+  background: '#2b1f1f',
+  border: '1px solid #5a2a2a',
+  padding: 16,
+  borderRadius: 12,
+  marginBottom: 12,
+};
+
+const chip: React.CSSProperties = {
+  padding: '4px 8px',
+  fontSize: 12,
+  borderRadius: 999,
+  border: '1px solid #1b2236',
+  background: '#0f1527',
+};
+
+// ========== Helpers ==========
+function levelGlyph(level: LogEntry['level']) {
+  switch (level) {
+    case 'info':
+      return 'ℹ️';
+    case 'warn':
+      return '⚠️';
+    case 'error':
+      return '❌';
+    case 'success':
+      return '✅';
+    default:
+      return '•';
+  }
+}
+function levelColor(level: LogEntry['level']) {
+  switch (level) {
+    case 'info':
+      return '#9aa7d8';
+    case 'warn':
+      return '#ffd166';
+    case 'error':
+      return '#ff6b6b';
+    case 'success':
+      return '#50fa7b';
+    default:
+      return '#9aa7d8';
+  }
+}
