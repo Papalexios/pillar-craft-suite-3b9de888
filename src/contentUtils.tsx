@@ -57,17 +57,29 @@ export const fetchWithProxies = async (url: string, options: RequestInit = {}, o
         });
     }
 
-      // ULTRA SOTA: XML/Sitemap CORS Proxy Strategy (Hardened 2025)
-  const isSitemap = url.toLowerCase().includes('sitemap') || url.toLowerCase().includes('.xml');
-  const xmlProxies = [
-    `https://cors.sh/${encodeURIComponent(url)}`, // cors.sh (Most Reliable for XML)
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, 
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  const strategies = [
+    // 1. Direct (Fastest)
+    () => fetch(url, { ...options, signal: AbortSignal.timeout(4000) }),
+    // 2. CorsProxy (Reliable)
+    () => fetch(`https://corsproxy.io/?${encodedUrl}`, { ...options, signal: AbortSignal.timeout(8000) }),
+    // 3. AllOrigins (Backup)
+    () => fetch(`https://api.allorigins.win/raw?url=${encodedUrl}`, { ...options, signal: AbortSignal.timeout(8000) }),
+    // 4. ThingProxy (Backup 2)
+    () => fetch(`https://thingproxy.freeboard.io/fetch/${url}`, { ...options, signal: AbortSignal.timeout(8000) })
   ];
+
+  // ULTRA SOTA: XML/Sitemap CORS Proxy Strategy (Hardened 2025)
+  const isSitemap = url.toLowerCase().includes('sitemap') || url.toLowerCase().includes('.xml');
   if (isSitemap) {
+    const xmlProxies = [
+      `https://cors.sh/${encodedUrl}`, // cors.sh (Most Reliable for XML)
+      `https://api.allorigins.win/raw?url=${encodedUrl}`,
+      `https://corsproxy.io/?${encodedUrl}`,
+    ];
     strategies.unshift(...xmlProxies.map((proxy, idx) => () => 
       fetch(proxy, { ...options, signal: AbortSignal.timeout(12000 + idx * 2000) })
     ));
+  }
   }
     const strategies = [
         // 1. Direct (Fastest)
