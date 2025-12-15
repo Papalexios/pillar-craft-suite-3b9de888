@@ -1,4 +1,3 @@
-
 import React from "react";
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
@@ -91,9 +90,9 @@ export type GeneratedContent = {
         keyTakeawaysHtml: string;
         comparisonTableHtml: string;
         faqHtml: string;
-        referencesHtml: string; // SOTA: Verified References
+        referencesHtml: string;
     };
-    isFullSurgicalRewrite?: boolean; // SOTA: Flag for full content replacement in God Mode
+    isFullSurgicalRewrite?: boolean;
 };
 
 export interface SiteInfo {
@@ -144,9 +143,12 @@ export type ApiClients = {
     groq: OpenAI | null;
 };
 
+// SOTA FIX: Unified WpConfig with both legacy (url) and normalized (siteUrl) fields
 export type WpConfig = {
-    url: string;
+    url: string;           // Legacy field for backwards compatibility
     username: string;
+    siteUrl?: string;      // Normalized field (preferred)
+    appPassword?: string;  // Normalized field (preferred)
 };
 
 export interface GapAnalysisSuggestion {
@@ -171,4 +173,6 @@ export interface GenerationContext {
     openrouterModels: string[];
     selectedGroqModel: string;
     neuronConfig: NeuronConfig;
+    excludedUrls?: string[];
+    excludedCategories?: string[];
 }
