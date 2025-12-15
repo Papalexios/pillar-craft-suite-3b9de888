@@ -54,10 +54,14 @@ export const fetchWithProxies = async (
     onProgress?: (message: string) => void
 ): Promise<Response> => {
     let lastError: Error | null = null;
-    const REQUEST_TIMEOUT = 45000;
+    const REQUEST_TIMEOUT = 60000; // Increased to 60s
+
+    // Detect sitemap/XML requests
+    const isSitemapRequest = url.toLowerCase().includes('sitemap') || 
+                            url.toLowerCase().endsWith('.xml');
 
     const safeHeaders: Record<string, string> = {
-        'Accept': 'application/json',
+        'Accept': isSitemapRequest ? 'application/xml, text/xml, */*' : 'application/json',
     };
     
     let hasAuth = false;
@@ -69,87 +73,99 @@ export const fetchWithProxies = async (
             if (lowerKey === 'x-api-key' || lowerKey === 'authorization') {
                 hasAuth = true;
             }
-            if (!['user-agent', 'origin', 'referer', 'host', 'connection', 'sec-fetch-mode', 'accept-encoding', 'content-length'].includes(lowerKey)) {
+            if (!['user-agent', 'origin', 'referer', 'host'].includes(lowerKey)) {
                 safeHeaders[key] = headerObj[key];
             }
         });
     }
 
-    const fetchOptions = {
-        ...options,
-        headers: safeHeaders
-    };
+    const fetchOptions = { ...options, headers: safeHeaders };
 
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort('Direct fetch timed out'), 4000); 
-        const directResponse = await fetch(url, {
-            ...fetchOptions,
-            signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        
-        if (directResponse.ok || (directResponse.status >= 400 && directResponse.status < 600)) {
-            return directResponse;
+    // Enhanced direct fetch with retry
+    console.log(`[Network] Attempting direct fetch: ${url}`);
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            const controller = new AbortController();
+            const directTimeout = isSitemapRequest ? 10000 : 4000; // 10s for sitemaps
+            const timeoutId = setTimeout(() => controller.abort(), directTimeout);
+            
+            const directResponse = await fetch(url, {
+                ...fetchOptions,
+                signal: controller.signal,
+                mode: 'cors'
+            });
+            clearTimeout(timeoutId);
+            
+            if (directResponse.ok || (directResponse.status >= 400 && directResponse.status < 600)) {
+                console.log(`[Network] ✓ Direct fetch succeeded`);
+                return directResponse;
+            }
+        } catch (error: any) {
+            lastError = error;
+            console.warn(`[Network] Direct attempt ${attempt + 1} failed`);
+            if (attempt === 0) await new Promise(r => setTimeout(r, 1000));
         }
-    } catch (error: any) {
-        // Direct failed
     }
 
+    // Proxy fallback
+    console.log(`[Network] Trying CORS proxies...`);
     const encodedUrl = encodeURIComponent(url);
     let proxies: string[] = [];
 
-    if (hasAuth) {
+    if (isSitemapRequest) {
+        proxies = [
+            `https://corsproxy.io/?${url}`,
+            `https://corsproxy.org/?${encodedUrl}`,
+            `https://api.allorigins.win/raw?url=${encodedUrl}`,
+            `https://api.codetabs.com/v1/proxy?quest=${encodedUrl}`,
+        ];
+    } else if (hasAuth) {
         proxies = [
             `https://thingproxy.freeboard.io/fetch/${url}`,
-            `https://api.codetabs.com/v1/proxy?quest=${encodedUrl}`,
             `https://corsproxy.io/?${encodedUrl}`,
+            `https://corsproxy.org/?${encodedUrl}`,
         ];
     } else {
         proxies = [
             `https://corsproxy.io/?${url}`,
             `https://api.allorigins.win/raw?url=${encodedUrl}`,
-            `https://api.codetabs.com/v1/proxy?quest=${encodedUrl}`,
+            `https://corsproxy.org/?${encodedUrl}`,
         ];
     }
 
     for (let i = 0; i < proxies.length; i++) {
         const proxyUrl = proxies[i];
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(`Proxy timed out`), REQUEST_TIMEOUT);
+        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
         try {
             const shortName = new URL(proxyUrl).hostname;
-            console.log(`[SOTA Net] Attempting proxy ${i+1}/${proxies.length}: ${shortName}`);
+            console.log(`[Network] Proxy ${i+1}/${proxies.length}: ${shortName}`);
+            if (onProgress) onProgress(`Trying ${shortName}...`);
             
             const response = await fetch(proxyUrl, {
                 ...fetchOptions,
                 signal: controller.signal,
+                mode: 'cors'
             });
             clearTimeout(timeoutId);
 
             if (response.status >= 500) {
-                 lastError = new Error(`Proxy ${shortName} failed`);
-                 continue;
+                lastError = new Error(`${shortName} returned ${response.status}`);
+                continue;
             }
 
-            if (hasAuth && (response.status === 401 || response.status === 403)) {
-                 lastError = new Error(`Auth failed via ${shortName}`);
-                 if (i < proxies.length - 1) continue;
-            }
-
-            return response; 
+            console.log(`[Network] ✓ Proxy ${shortName} succeeded`);
+            return response;
 
         } catch (error: any) {
             clearTimeout(timeoutId);
-            lastError = error as Error;
+            lastError = error;
         }
     }
 
-    const errorDetails = lastError ? lastError.message : "Unknown network error";
-    throw new Error(`Network Failure: ${errorDetails}`);
+    throw new Error(`All network strategies failed for ${url}. Last error: ${lastError?.message}. Check your internet connection and try again.`);
 };
-
 export const smartCrawl = async (url: string): Promise<string> => {
     console.log(`[SOTA Crawl] Initiating smart crawl for: ${url}`);
 
