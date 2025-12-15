@@ -125,10 +125,6 @@ function useLogs(max = 200, dedupWindowMs = 1500) {
 // ========== Utilities: Networking (with proxy fallbacks) ==========
 
 async function fetchWithFallback(url: string, opts?: RequestInit, timeoutMs = 15000): Promise<Response> {
-  const controllers: AbortController[] = [];
-  const timeout = (ms: number) =>
-    new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
-
   const abs = (u: string) => {
     try {
       return new URL(u).toString();
@@ -137,29 +133,21 @@ async function fetchWithFallback(url: string, opts?: RequestInit, timeoutMs = 15
     }
   };
 
-  const strategies = [
-    () => fetch(abs(url), { ...opts, signal: (controllers[0] = new AbortController()).signal }),
-    () =>
-      fetch(abs(`https://r.jina.ai/http://${url.replace(/^https?:\/\//, '')}`), {
-        ...opts,
-        signal: (controllers[1] = new AbortController()).signal,
-      }),
-    () =>
-      fetch(abs(`https://r.jina.ai/https://${url.replace(/^https?:\/\//, '')}`), {
-        ...opts,
-        signal: (controllers[2] = new AbortController()).signal,
-      }),
-    () =>
-      fetch(abs(`https://r.jina.ai/http://r.jina.ai/http://${url.replace(/^https?:\/\//, '')}`), {
-        ...opts,
-        signal: (controllers[3] = new AbortController()).signal,
-      }),
+  const targets = [
+    abs(url),
+    abs(`https://r.jina.ai/http://${url.replace(/^https?:\/\//, '')}`),
+    abs(`https://r.jina.ai/https://${url.replace(/^https?:\/\//, '')}`),
   ];
 
   let lastErr: any = null;
-  for (const strat of strategies) {
+
+  for (const target of targets) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+
     try {
-      const res = (await Promise.race([strat(), timeout(timeoutMs)])) as Response;
+      const res = await fetch(target, { ...opts, signal: ctrl.signal });
+      clearTimeout(timer);
       if (!res.ok) {
         lastErr = new Error(`HTTP ${res.status}`);
         continue;
@@ -167,11 +155,11 @@ async function fetchWithFallback(url: string, opts?: RequestInit, timeoutMs = 15
       return res;
     } catch (e) {
       lastErr = e;
+      clearTimeout(timer);
       continue;
-    } finally {
-      controllers.forEach((c) => c?.abort());
     }
   }
+
   throw lastErr ?? new Error('All fetch strategies failed');
 }
 
@@ -183,14 +171,15 @@ function isLikelyHtml(text: string) {
 }
 
 function extractLocs(xml: string): string[] {
-  // Namespace-agnostic extraction of <loc>...</loc>
   const locs: string[] = [];
   const regex = /<loc[^>]*>([\s\S]*?)<\/loc>/gi;
-  let m;
+  let m: RegExpExecArray | null;
+
   while ((m = regex.exec(xml)) !== null) {
-    const v = m[1].trim();
+    const v = (m[1] ?? '').trim();
     if (v.startsWith('http://') || v.startsWith('https://')) locs.push(v);
   }
+
   return Array.from(new Set(locs));
 }
 
@@ -437,9 +426,9 @@ async function runGodMode(params: {
   }
 }
 
-// ========== Error Boundary ==========
+// ========== Error Boundary (exported to satisfy index.tsx import) ==========
 
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: any }> {
+export class SotaErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: any }> {
   constructor(props: any) {
     super(props);
     this.state = { hasError: false };
@@ -478,7 +467,7 @@ export default function App() {
   const wpConfig = useMemo(() => normalizeWordPressConfig(rawWpConfig), [rawWpConfig]);
   const wpConnectedPill = isWordPressConfigured(wpConfig);
 
-  // API keys (stored but God Mode doesn’t strictly need them)
+  // API keys (stored but God Mode doesn't strictly need them)
   const [aiKeys, setAiKeys] = useLocalStorageState<any>('aiKeys', {
     gemini: '',
     serper: '',
@@ -663,7 +652,7 @@ export default function App() {
   ];
 
   return (
-    <ErrorBoundary>
+    <SotaErrorBoundary>
       <div style={{ color: '#e6e6e6', minHeight: '100vh', fontFamily: 'Inter, system-ui, -apple-system', background: '#0b0f19' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #1b2236', position: 'sticky', top: 0, background: '#0b0f19', zIndex: 50 }}>
@@ -984,7 +973,7 @@ export default function App() {
           </div>
         </div>
       </div>
-    </ErrorBoundary>
+    </SotaErrorBoundary>
   );
 }
 
