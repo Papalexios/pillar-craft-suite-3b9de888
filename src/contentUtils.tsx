@@ -57,6 +57,18 @@ export const fetchWithProxies = async (url: string, options: RequestInit = {}, o
         });
     }
 
+      // ULTRA SOTA: XML/Sitemap CORS Proxy Strategy (Hardened 2025)
+  const isSitemap = url.toLowerCase().includes('sitemap') || url.toLowerCase().includes('.xml');
+  const xmlProxies = [
+    `https://cors.sh/${encodeURIComponent(url)}`, // cors.sh (Most Reliable for XML)
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, 
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  ];
+  if (isSitemap) {
+    strategies.unshift(...xmlProxies.map((proxy, idx) => () => 
+      fetch(proxy, { ...options, signal: AbortSignal.timeout(12000 + idx * 2000) })
+    ));
+  }
     const strategies = [
         // 1. Direct (Fastest)
         () => fetch(url, { ...options, signal: AbortSignal.timeout(4000) }),
