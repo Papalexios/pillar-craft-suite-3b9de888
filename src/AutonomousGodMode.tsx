@@ -37,21 +37,16 @@ interface AutonomousGodModeProps {
 }
 
 /**
- * 🚀 AUTONOMOUS GOD MODE v2.0 - STATE OF THE ART
+ * 🚀 AUTONOMOUS GOD MODE v2.1 - PERFORMANCE OPTIMIZED
  * 
  * Revolutionary AI-Powered Content Optimization Engine
  * 
- * CORE FEATURES:
- * ✅ URL Targeting Priority (User URLs > Critical > High > Medium > Healthy)
- * ✅ Intelligent SEO Health Scoring (25+ metrics)
- * ✅ Surgical Content Updates (preserves voice)
- * ✅ Smart Internal Link Injection
- * ✅ Fact Verification & Updates
- * ✅ Real-time WordPress Integration
- * ✅ Comprehensive Error Recovery
- * ✅ Detailed Optimization Logs
- * ✅ Exclusion Controls
- * ✅ Performance Monitoring
+ * PERFORMANCE FEATURES:
+ * ⚡ Lazy health scoring (no upfront blocking)
+ * ⚡ Progressive queue building
+ * ⚡ Batched async processing
+ * ⚡ Instant UI rendering
+ * ⚡ Non-blocking operations
  */
 export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
   isGodModeActive,
@@ -72,21 +67,20 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   
-  const workerRef = useRef<NodeJS.Timeout | null>(null);
   const isRunningRef = useRef(false);
 
   // Logging System
   const addLog = useCallback((message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
     const emoji = { info: 'ℹ️', success: '✅', error: '❌', warning: '⚠️' }[type];
-    const log = `[${timestamp}] ${emoji} ${message}`;
-    setLogs(prev => [log, ...prev].slice(0, 100)); // Keep last 100 logs
+    const log = `[${timestamp}] ${message}`;
+    setLogs(prev => [log, ...prev].slice(0, 50)); // Keep last 50 logs
     onStatusUpdate?.(message);
   }, [onStatusUpdate]);
 
   /**
-   * 🎯 INTELLIGENT SEO HEALTH SCORING
-   * Analyzes 25+ metrics to determine optimization priority
+   * 🎯 INTELLIGENT SEO HEALTH SCORING (LAZY)
+   * Only called when URL is about to be processed - NO UPFRONT BLOCKING
    */
   const calculateHealthScore = useCallback(async (url: string): Promise<URLHealthScore> => {
     const issues: string[] = [];
@@ -175,10 +169,9 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
       };
 
     } catch (error: any) {
-      addLog(`Health check failed for ${url}: ${error.message}`, 'error');
       return { score: 50, status: 'medium', issues: ['Health check error'] };
     }
-  }, [wpConfig, addLog]);
+  }, [wpConfig]);
 
   /**
    * 🔧 SURGICAL CONTENT OPTIMIZATION
@@ -190,7 +183,7 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
     const errors: string[] = [];
 
     try {
-      addLog(`Starting optimization: ${url}`);
+      addLog(`Processing: ${url}`);
 
       // 1. Fetch current content
       const wpPost = await fetchWordPressPost(url, wpConfig);
@@ -210,49 +203,40 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
       // 4. Inject smart internal links
       let updatedContent = currentContent;
       const linkInjections = await injectSmartInternalLinks(currentContent, relatedPosts);
-      if (linkInjections.length > 0) {
-        updatedContent = linkInjections[0].content; // Use enhanced content
+      if (linkInjections.length > 0 && linkInjections[0].linksAdded > 0) {
+        updatedContent = linkInjections[0].content;
         changes.push(`Added ${linkInjections[0].linksAdded} internal links`);
       }
 
-      // 5. Update facts & statistics (if any outdated)
-      const factUpdates = await updateOutdatedFacts(updatedContent);
-      if (factUpdates.updated) {
-        updatedContent = factUpdates.content;
-        changes.push(`Updated ${factUpdates.count} outdated facts`);
-      }
-
-      // 6. Enhance meta description if needed
+      // 5. Enhance meta description if needed
       let metaDescription = wpPost.yoast_meta?.yoast_wpseo_metadesc;
       if (!metaDescription || metaDescription.length < 120) {
         metaDescription = await generateMetaDescription(currentTitle, updatedContent);
         changes.push('Enhanced meta description');
       }
 
-      // 7. Add/update schema markup
-      // (This would integrate with your existing schema generator)
-      
-      // 8. Improve readability if needed
-      const readabilityEnhancement = await enhanceReadability(updatedContent);
-      if (readabilityEnhancement.improved) {
-        updatedContent = readabilityEnhancement.content;
-        changes.push('Improved readability');
-      }
-
-      // 9. Push updates to WordPress
+      // 6. Push updates to WordPress (if any changes)
       if (changes.length > 0) {
         await updateWordPressPost(wpPost.id, {
           content: updatedContent,
           meta: { _yoast_wpseo_metadesc: metaDescription }
         }, wpConfig);
         
-        addLog(`✓ Optimized: ${url} (${changes.length} improvements)`, 'success');
+        addLog(`✓ Optimized: ${url} (${changes.length} changes)`, 'success');
       } else {
         addLog(`✓ No changes needed: ${url}`, 'info');
       }
 
       const healthAfter = (await calculateHealthScore(url)).score;
       const duration = Date.now() - startTime;
+
+      // Update health map
+      setUrlHealthMap(prev => new Map(prev).set(url, {
+        score: healthAfter,
+        status: healthAfter >= 80 ? 'healthy' : healthAfter >= 60 ? 'medium' : healthAfter >= 40 ? 'high' : 'critical',
+        issues: [],
+        wordCount: 0
+      }));
 
       return {
         url,
@@ -267,7 +251,7 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
     } catch (error: any) {
       const duration = Date.now() - startTime;
       errors.push(error.message);
-      addLog(`Failed to optimize ${url}: ${error.message}`, 'error');
+      addLog(`Failed: ${url} - ${error.message}`, 'error');
       
       return {
         url,
@@ -282,115 +266,107 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
   }, [wpConfig, sitemapPages, calculateHealthScore, addLog]);
 
   /**
-   * 🎯 PRIORITY QUEUE BUILDER
-   * User URLs > Critical > High > Medium > Healthy
+   * 🎯 INSTANT PRIORITY QUEUE BUILDER (NO BLOCKING)
+   * User URLs > All sitemap URLs
+   * Health checks happen DURING processing, not upfront
    */
-  const buildPriorityQueue = useCallback(async () => {
+  const buildPriorityQueue = useCallback(() => {
     addLog('Building priority queue...');
 
     // 1. Get all URLs from sitemap
-    let allUrls = sitemapPages.map(p => p.url || p.id).filter(Boolean);
+    let allUrls = sitemapPages
+      .map(p => p.url || p.id)
+      .filter(Boolean)
+      .filter(url => !excludedUrls.some(excluded => url.includes(excluded)));
 
-    // 2. Apply exclusions
-    allUrls = allUrls.filter(url => {
-      // Check URL exclusions
-      if (excludedUrls.some(excluded => url.includes(excluded))) return false;
-      
-      // Check category exclusions (would need category data)
-      // This is a placeholder - implement based on your WP API structure
-      
-      return true;
-    });
-
-    // 3. Calculate health scores
-    const healthScores = new Map<string, URLHealthScore>();
-    for (const url of allUrls.slice(0, 50)) { // Limit initial scan
-      try {
-        const health = await calculateHealthScore(url);
-        healthScores.set(url, health);
-      } catch (error) {
-        // Skip problematic URLs
-      }
-    }
-    setUrlHealthMap(healthScores);
-
-    // 4. Build prioritized queue
+    // 2. Build queue with user URLs first
     const queue: string[] = [];
 
-    // Priority 1: User-targeted URLs (from URL Targeting Engine)
+    // Priority 1: User-targeted URLs (HIGHEST PRIORITY)
     targetedUrls.forEach(url => {
-      if (allUrls.includes(url)) queue.push(url);
-    });
-
-    // Priority 2-5: By health status
-    const urlsByStatus = {
-      critical: [] as string[],
-      high: [] as string[],
-      medium: [] as string[],
-      healthy: [] as string[]
-    };
-
-    healthScores.forEach((health, url) => {
-      if (!queue.includes(url)) {
-        urlsByStatus[health.status].push(url);
+      if (allUrls.includes(url) && !queue.includes(url)) {
+        queue.push(url);
       }
     });
 
-    queue.push(...urlsByStatus.critical);
-    queue.push(...urlsByStatus.high);
-    queue.push(...urlsByStatus.medium);
-    queue.push(...urlsByStatus.healthy);
+    // Priority 2: All other sitemap URLs
+    allUrls.forEach(url => {
+      if (!queue.includes(url)) {
+        queue.push(url);
+      }
+    });
 
     setProcessingQueue(queue);
     setProgress({ current: 0, total: queue.length });
-    addLog(`Queue built: ${queue.length} URLs to process`, 'success');
+    addLog(`Queue ready: ${queue.length} URLs (${targetedUrls.length} prioritized)`, 'success');
 
     return queue;
-  }, [sitemapPages, targetedUrls, excludedUrls, calculateHealthScore, addLog]);
+  }, [sitemapPages, targetedUrls, excludedUrls, addLog]);
 
   /**
    * 🚀 AUTONOMOUS WORKER LOOP
-   * Continuously processes queue when God Mode is active
+   * Non-blocking, progressive processing
    */
   const runWorker = useCallback(async () => {
-    if (!isGodModeActive || isRunningRef.current) return;
+    if (!isGodModeActive || isRunningRef.current || !wpConfig?.siteUrl) {
+      if (!wpConfig?.siteUrl) {
+        addLog('WordPress not configured', 'warning');
+      }
+      return;
+    }
 
     isRunningRef.current = true;
     setIsProcessing(true);
     addLog('🤖 God Mode activated', 'success');
 
     try {
-      const queue = await buildPriorityQueue();
+      // Build queue instantly (no blocking)
+      const queue = buildPriorityQueue();
 
+      if (queue.length === 0) {
+        addLog('No URLs to process', 'warning');
+        return;
+      }
+
+      // Process URLs one by one
       for (let i = 0; i < queue.length; i++) {
-        if (!isGodModeActive || !isRunningRef.current) break;
+        if (!isGodModeActive || !isRunningRef.current) {
+          addLog('God Mode stopped', 'warning');
+          break;
+        }
 
         const url = queue[i];
         setCurrentUrl(url);
         setProgress({ current: i + 1, total: queue.length });
 
         const result = await optimizeContent(url);
-        setOptimizedUrls(prev => [result, ...prev]);
+        setOptimizedUrls(prev => [result, ...prev].slice(0, 20)); // Keep last 20
         onOptimizationComplete?.(result);
 
         // Rate limiting: 5-10 seconds between posts
-        await new Promise(resolve => setTimeout(resolve, 5000 + Math.random() * 5000));
+        if (i < queue.length - 1) {
+          const delay = 5000 + Math.random() * 5000;
+          addLog(`Waiting ${Math.round(delay/1000)}s before next URL...`, 'info');
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
       }
 
-      addLog('🎉 God Mode cycle complete', 'success');
+      addLog('🎉 God Mode cycle complete!', 'success');
     } catch (error: any) {
-      addLog(`Worker error: ${error.message}`, 'error');
+      addLog(`Error: ${error.message}`, 'error');
     } finally {
       isRunningRef.current = false;
       setIsProcessing(false);
       setCurrentUrl(null);
     }
-  }, [isGodModeActive, buildPriorityQueue, optimizeContent, onOptimizationComplete, addLog]);
+  }, [isGodModeActive, wpConfig, buildPriorityQueue, optimizeContent, onOptimizationComplete, addLog]);
 
   // Auto-start worker when God Mode activates
   useEffect(() => {
     if (isGodModeActive && !isRunningRef.current) {
-      runWorker();
+      // Small delay to prevent immediate execution during render
+      const timer = setTimeout(() => runWorker(), 100);
+      return () => clearTimeout(timer);
     } else if (!isGodModeActive && isRunningRef.current) {
       isRunningRef.current = false;
       addLog('God Mode deactivated', 'warning');
@@ -400,7 +376,9 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
   // Handle targeted URLs updates
   const handleTargetedUrlsChange = useCallback((urls: string[]) => {
     setTargetedUrls(urls);
-    addLog(`Target URLs updated: ${urls.length} URLs`);
+    if (urls.length > 0) {
+      addLog(`🎯 ${urls.length} URL${urls.length > 1 ? 's' : ''} prioritized`, 'info');
+    }
   }, [addLog]);
 
   // Get status color
@@ -412,17 +390,6 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
       healthy: '#10b981'
     };
     return colors[status];
-  };
-
-  // Get status icon
-  const getStatusIcon = (status: URLStatus): string => {
-    const icons = {
-      critical: '🔴',
-      high: '🟠',
-      medium: '🟡',
-      healthy: '🟢'
-    };
-    return icons[status];
   };
 
   // Status counts
@@ -514,30 +481,32 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
             </span>
           </div>
 
-          {/* Status counts */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
-            gap: '0.75rem',
-            marginBottom: '1rem'
-          }}>
-            {(['critical', 'high', 'medium', 'healthy'] as URLStatus[]).map(status => (
-              <div key={status} style={{
-                padding: '0.75rem',
-                backgroundColor: `${getStatusColor(status)}15`,
-                border: `1px solid ${getStatusColor(status)}40`,
-                borderRadius: '8px',
-                textAlign: 'center'
-              }}>
-                <div style={{ fontSize: '1.5rem', fontWeight: '700', color: getStatusColor(status) }}>
-                  {statusCounts[status]}
+          {/* Status counts (only for processed URLs) */}
+          {urlHealthMap.size > 0 && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '0.75rem',
+              marginBottom: '1rem'
+            }}>
+              {(['critical', 'high', 'medium', 'healthy'] as URLStatus[]).map(status => (
+                <div key={status} style={{
+                  padding: '0.75rem',
+                  backgroundColor: `${getStatusColor(status)}15`,
+                  border: `1px solid ${getStatusColor(status)}40`,
+                  borderRadius: '8px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: '700', color: getStatusColor(status) }}>
+                    {statusCounts[status]}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'capitalize', marginTop: '0.25rem' }}>
+                    {status}
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'capitalize', marginTop: '0.25rem' }}>
-                  {status}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           {/* Current URL being processed */}
           {currentUrl && (
@@ -545,8 +514,7 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
               padding: '1rem',
               backgroundColor: 'rgba(16, 185, 129, 0.1)',
               border: '1px solid rgba(16, 185, 129, 0.4)',
-              borderRadius: '8px',
-              marginTop: '1rem'
+              borderRadius: '8px'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                 <span>⚡</span>
@@ -556,7 +524,8 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
                 color: '#60a5fa',
                 fontSize: '0.85rem',
                 fontFamily: 'monospace',
-                textDecoration: 'none'
+                textDecoration: 'none',
+                wordBreak: 'break-all'
               }}>
                 {currentUrl}
               </a>
@@ -623,13 +592,14 @@ export const AutonomousGodMode: React.FC<AutonomousGodModeProps> = ({
                 fontFamily: 'monospace',
                 textDecoration: 'none',
                 display: 'block',
-                marginBottom: '0.25rem'
+                marginBottom: '0.25rem',
+                wordBreak: 'break-all'
               }}>
                 {result.url}
               </a>
               <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
                 {result.changes.length > 0 ? result.changes.join(', ') : 'No changes needed'}
-                {result.success && (
+                {result.success && result.healthBefore > 0 && (
                   <span style={{ color: '#10b981', marginLeft: '0.5rem' }}>
                     Health: {result.healthBefore}→{result.healthAfter}
                   </span>
@@ -658,19 +628,13 @@ export default AutonomousGodMode;
 
 // ==================== HELPER FUNCTIONS ====================
 
-/**
- * Fetch WordPress post data
- */
 async function fetchWordPressPost(url: string, wpConfig: WpConfig): Promise<any> {
   try {
-    // Extract slug from URL
     const urlObj = new URL(url);
     const slug = urlObj.pathname.split('/').filter(Boolean).pop();
-    
     const apiUrl = `${wpConfig.siteUrl}/wp-json/wp/v2/posts?slug=${slug}&_embed=1`;
     const response = await fetchWithProxies(apiUrl);
     const posts = await response.json();
-    
     return posts && posts.length > 0 ? posts[0] : null;
   } catch (error) {
     console.error('Failed to fetch WP post:', error);
@@ -678,9 +642,6 @@ async function fetchWordPressPost(url: string, wpConfig: WpConfig): Promise<any>
   }
 }
 
-/**
- * Update WordPress post
- */
 async function updateWordPressPost(postId: number, updates: any, wpConfig: WpConfig): Promise<boolean> {
   try {
     const apiUrl = `${wpConfig.siteUrl}/wp-json/wp/v2/posts/${postId}`;
@@ -692,7 +653,6 @@ async function updateWordPressPost(postId: number, updates: any, wpConfig: WpCon
       },
       body: JSON.stringify(updates)
     });
-    
     return response.ok;
   } catch (error) {
     console.error('Failed to update WP post:', error);
@@ -700,16 +660,10 @@ async function updateWordPressPost(postId: number, updates: any, wpConfig: WpCon
   }
 }
 
-/**
- * Find related posts for internal linking
- */
 async function findRelatedPosts(url: string, allPages: SitemapPage[], wpConfig: WpConfig): Promise<SitemapPage[]> {
-  // Extract keywords from URL
   const urlObj = new URL(url);
   const pathParts = urlObj.pathname.split('/').filter(Boolean);
   const keywords = pathParts.map(p => p.replace(/-/g, ' ').toLowerCase());
-  
-  // Find pages with matching keywords
   return allPages
     .filter(page => {
       const pageUrl = page.url || page.id;
@@ -718,23 +672,15 @@ async function findRelatedPosts(url: string, allPages: SitemapPage[], wpConfig: 
     .slice(0, 10);
 }
 
-/**
- * Inject smart internal links into content
- */
 async function injectSmartInternalLinks(content: string, relatedPosts: SitemapPage[]): Promise<Array<{content: string, linksAdded: number}>> {
   if (relatedPosts.length === 0) return [];
-  
   let updatedContent = content;
   let linksAdded = 0;
-  
-  // Find opportunities to add links (simple implementation)
   for (const post of relatedPosts.slice(0, 3)) {
     const anchorText = post.title || post.slug || '';
     if (!anchorText || updatedContent.includes(`href="${post.url}"`)) continue;
-    
-    // Find first occurrence of related keyword and add link
-    const keywords = anchorText.toLowerCase().split(' ');
-    for (const keyword of keywords) {
+    const keywords = anchorText.toLowerCase().split(' ').filter(k => k.length > 3);
+    for (const keyword of keywords.slice(0, 2)) {
       const regex = new RegExp(`\\b${keyword}\\b`, 'i');
       if (regex.test(updatedContent) && !updatedContent.includes(`>${keyword}</a>`)) {
         updatedContent = updatedContent.replace(regex, `<a href="${post.url}">${keyword}</a>`);
@@ -743,39 +689,15 @@ async function injectSmartInternalLinks(content: string, relatedPosts: SitemapPa
       }
     }
   }
-  
   return [{ content: updatedContent, linksAdded }];
 }
 
-/**
- * Update outdated facts and statistics
- */
-async function updateOutdatedFacts(content: string): Promise<{updated: boolean, content: string, count: number}> {
-  // This would integrate with your AI service to detect and update outdated facts
-  // Placeholder implementation
-  return { updated: false, content, count: 0 };
-}
-
-/**
- * Generate optimized meta description
- */
 async function generateMetaDescription(title: string, content: string): Promise<string> {
-  // Extract first meaningful sentence
   const textOnly = content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
   const sentences = textOnly.match(/[^.!?]+[.!?]+/g) || [];
-  
   let description = sentences[0] || textOnly.substring(0, 150);
   if (description.length > 155) {
     description = description.substring(0, 152) + '...';
   }
-  
   return description;
-}
-
-/**
- * Enhance content readability
- */
-async function enhanceReadability(content: string): Promise<{improved: boolean, content: string}> {
-  // Placeholder - would integrate with AI to improve sentence structure
-  return { improved: false, content };
 }
