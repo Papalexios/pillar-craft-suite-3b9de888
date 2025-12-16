@@ -1,0 +1,67 @@
+URGENT FIX FOR SITEMAP CRAWLING CORS ERROR
+===========================================
+
+The issue: Browser blocks direct sitemap fetching due to CORS policy.
+
+SOLUTION: Replace the fetchWithFallback function in App.tsx (around line 180) with this:
+
+```typescript
+async function fetchWithFallback(url: string, opts?: RequestInit, timeoutMs = 20000): Promise<Response> {
+  console.log('[Fetch] Attempting:', url);
+  
+  // Try multiple CORS proxies
+  const strategies = [
+    // 1. AllOrigins (best CORS proxy)
+    () => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    // 2. CORS Anywhere  
+    () => `https://cors-anywhere.herokuapp.com/${url}`,
+    // 3. Jina reader
+    () => `https://r.jina.ai/${url}`,
+    // 4. Direct (will fail but try anyway)
+    () => url,
+  ];
+
+  let lastErr: any = null;
+
+  for (let i = 0; i < strategies.length; i++) {
+    const target = strategies[i]();
+    console.log(`[Fetch] Try ${i + 1}:`, target);
+    
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(target, { 
+        ...opts, 
+        signal: ctrl.signal,
+        mode: 'cors',
+      });
+      clearTimeout(timer);
+      
+      if (!res.ok) {
+        console.warn(`[Fetch] HTTP ${res.status}`);
+        lastErr = new Error(`HTTP ${res.status}`);
+        continue;
+      }
+      
+      console.log('[Fetch] ✓ Success!');
+      return res;
+    } catch (e: any) {
+      clearTimeout(timer);
+      console.warn(`[Fetch] Failed:`, e.message);
+      lastErr = e;
+      continue;
+    }
+  }
+
+  console.error('[Fetch] All proxies failed');
+  throw lastErr ?? new Error('All CORS proxies failed. Check console.');
+}
+```
+
+AFTER APPLYING THIS FIX:
+- Sitemap crawling will use CORS proxies
+- Detailed console logging will show what's happening
+- Multiple fallback proxies ensure success
+
+DEPLOY: Commit and push to trigger rebuild.
