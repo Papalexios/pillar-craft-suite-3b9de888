@@ -230,12 +230,21 @@ async function crawlSitemapEntry(url: string, limit = 10000): Promise<SitemapPag
   const res = await fetchWithFallback(url, { method: 'GET' });
   const txt = await res.text();
 
-  if (isLikelyHtml(txt)) {
-    throw new Error('Expected XML but got HTML');
+  // Extract XML content even if wrapped in HTML - Jina workaround
+    let xmlContent = txt;
+    if (isLikelyHtml(txt)) {
+      console.log('[Sitemap] Jina returned HTML, extracting XML...');
+      const xmlMatch = txt.match(/<\?xml[\s\S]*?>|<urlset[\s\S]*?<\/urlset>/i);
+      if (xmlMatch) {
+        xmlContent = xmlMatch[0];
+        console.log('[Sitemap] ✓ XML extracted:', xmlContent.length, 'chars');
+      }
+    }
+    
+    const locs = extractLocs(xmlContent);
   }
 
-  const locs = extractLocs(txt);
-  const type = detectSitemapType(txt);
+ const type = detectSitemapType(xmlContent);
 
   if (type === 'index') {
     const pages: SitemapPage[] = [];
