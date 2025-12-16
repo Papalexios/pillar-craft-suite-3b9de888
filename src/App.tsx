@@ -210,8 +210,7 @@ function extractLocs(xml: string): string[] {
   const locs: string[] = [];
 const regex = /<loc[^>]*>([^<]+)<\/loc>/gi;  let m: RegExpExecArray | null;
       console.log('[extractLocs] Found regex matches:', regex);
-    let m;
-    while ((m = regex.exec(xml)) !== null) {
+   while ((m = regex.exec(xml)) !== null) {
       const url = m[1]?.trim();
       if (url) {
         console.log('[extractLocs] Extracted URL:', url);
