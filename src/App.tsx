@@ -242,8 +242,6 @@ async function crawlSitemapEntry(url: string, limit = 10000): Promise<SitemapPag
     }
     
     const locs = extractLocs(xmlContent);
-  }
-
  const type = detectSitemapType(xmlContent);
 
   if (type === 'index') {
