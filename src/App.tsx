@@ -609,7 +609,7 @@ export default function App() {
       setExistingPages(pages);
       addSuccess(`✓ Crawled ${pages.length} pages from sitemap`);
     } catch (e: any) {
-      addError(`Sitemap crawl failed: ${e?.message || 'error'}`);
+  addError(`Sitemap crawl failed: ${e?.message || 'error'}`);  // ← Error shown here
     } finally {
       setCrawlBusy(false);
     }
