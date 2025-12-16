@@ -208,13 +208,19 @@ function isLikelyHtml(text: string) {
 
 function extractLocs(xml: string): string[] {
   const locs: string[] = [];
-  const regex = /<loc[^>]*>([\s\S]*?)<\/loc>/gi;
-  let m: RegExpExecArray | null;
+const regex = /<loc[^>]*>([^<]+)<\/loc>/gi;  let m: RegExpExecArray | null;
+      console.log('[extractLocs] Found regex matches:', regex);
+    let m;
+    while ((m = regex.exec(xml)) !== null) {
+      const url = m[1]?.trim();
+      if (url) {
+        console.log('[extractLocs] Extracted URL:', url);
+        locs.push(url);
+      }
+    }
+    console.log('[extractLocs] Total URLs found:', locs.length, locs);
 
-  while ((m = regex.exec(xml)) !== null) {
-    const v = (m[1] ?? '').trim();
-    if (v.startsWith('http://') || v.startsWith('https://')) locs.push(v);
-  }
+
 
   return Array.from(new Set(locs));
 }
