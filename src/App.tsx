@@ -1,6 +1,61 @@
-import React, { useState } from 'react';
+import React, { Component, useState } from 'react';
 import LandingPage from './LandingPage';
 import './index.css';
+
+// Error Boundary for production safety
+export class SotaErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error?: any }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error('App Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, maxWidth: 800, margin: '0 auto', textAlign: 'center' }}>
+          <h2 style={{ color: '#ef4444', marginBottom: 16 }}>⚠️ Something went wrong</h2>
+          <pre style={{ 
+            background: 'rgba(15, 23, 42, 0.95)', 
+            padding: 20, 
+            borderRadius: 12, 
+            color: '#e5e7eb',
+            textAlign: 'left',
+            overflow: 'auto'
+          }}>
+            {String(this.state.error || 'Unknown error')}
+          </pre>
+          <button 
+            onClick={() => window.location.reload()} 
+            style={{ 
+              marginTop: 20, 
+              padding: '12px 24px', 
+              borderRadius: 999, 
+              background: 'linear-gradient(135deg, #6366f1, #a855f7)', 
+              color: '#fff', 
+              border: 'none', 
+              cursor: 'pointer',
+              fontWeight: 600
+            }}
+          >
+            Reload Application
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function App() {
   const [showApp, setShowApp] = useState(false);
