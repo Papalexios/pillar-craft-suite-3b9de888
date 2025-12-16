@@ -148,40 +148,56 @@ function useLogs(max = 500) {
 
 // ========== Utilities: Networking ==========
 
-async function fetchWithFallback(url: string, opts?: RequestInit, timeoutMs = 15000): Promise<Response> {
-  const abs = (u: string) => {
-    try { return new URL(u).toString(); } catch { return u; }
-  };
-
-  const targets = [
-    abs(url),
-    abs(`https://r.jina.ai/http://${url.replace(/^https?:\/\//, '')}`),
-    abs(`https://r.jina.ai/https://${url.replace(/^https?:\/\//, '')}`),
+async function fetchWithFallback(url: string, opts?: RequestInit, timeoutMs = 20000): Promise<Response> {
+  console.log('[Fetch] Attempting:', url);
+  
+  // Try multiple CORS proxies in priority order
+  const strategies = [
+    // 1. AllOrigins - Best free CORS proxy
+    () => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    // 2. Jina AI Reader - Good for sitemaps
+    () => `https://r.jina.ai/${url}`,
+    // 3. Direct attempt (will fail with CORS but worth trying)
+    () => url,
   ];
 
   let lastErr: any = null;
 
-  for (const target of targets) {
+  for (let i = 0; i < strategies.length; i++) {
+    const target = strategies[i]();
+    console.log(`[Fetch] Strategy ${i + 1}/${strategies.length}:`, target);
+    
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
 
     try {
-      const res = await fetch(target, { ...opts, signal: ctrl.signal });
+      const res = await fetch(target, { 
+        ...opts, 
+        signal: ctrl.signal,
+        mode: 'cors',
+      });
       clearTimeout(timer);
+      
       if (!res.ok) {
+        console.warn(`[Fetch] HTTP ${res.status} from:`, target);
         lastErr = new Error(`HTTP ${res.status}`);
         continue;
       }
+      
+      console.log('[Fetch] ✓ Success with:', target);
       return res;
-    } catch (e) {
-      lastErr = e;
+    } catch (e: any) {
       clearTimeout(timer);
+      console.warn(`[Fetch] Failed:`, e.message, '| URL:', target);
+      lastErr = e;
       continue;
     }
   }
 
-  throw lastErr ?? new Error('All fetch strategies failed');
+  console.error('[Fetch] ❌ All strategies failed for:', url);
+  throw lastErr ?? new Error('All CORS proxies failed. Try adding the sitemap URL directly.');
 }
+
 
 // ========== Utilities: Sitemap Parsing ==========
 
